@@ -460,6 +460,30 @@ export default function App() {
     finally { setBusy(false); }
   }
 
+  async function permanentlyDeleteAllData() {
+    if (!user || busy) return;
+    const warning = 'PERMANENTLY DELETE ALL DATA in the dashboard collections? This cannot be undone. All documents and nested subcollections in messages, projects, settings, websites, n8n_projects, n8n_project_forms, and prompts will be permanently deleted. This does not delete Firebase Authentication users or Storage files.';
+    if (!window.confirm(warning)) return;
+    const confirmation = window.prompt('Final safety check: type DELETE ALL exactly to permanently erase the dashboard database collections.');
+    if (confirmation !== 'DELETE ALL') {
+      notify('Permanent deletion cancelled. No delete request was sent.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await apiRequest<{ permanentlyDeleted: boolean; deletedByCollection: Record<string, number> }>(user, '/api/backup', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'delete-all', confirmation: 'DELETE ALL' })
+      });
+      const total = Object.values(result.deletedByCollection || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+      notify(`Permanent deletion complete: ${total} top-level documents removed across dashboard collections.`);
+      setRecords([]);
+      await loadRecords(active, user);
+    } catch (e) {
+      notify(e instanceof Error ? `Delete failed: ${e.message}. Check the database before retrying.` : 'Delete failed. Check the database before retrying.');
+    } finally { setBusy(false); }
+  }
+
   async function importAllData(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -563,7 +587,7 @@ export default function App() {
 
         <section className="data-panel">
           <div className="panel-heading"><div><div className="eyebrow">COLLECTION / {String(SECTIONS.findIndex(s => s.id === active) + 1).padStart(2,'0')}</div><h2>{current.title}</h2><p>{current.subtitle} <span className="separator">·</span> Showing up to 100 records</p></div><div className="panel-heading-actions"><button className="secondary" onClick={() => void loadRecords(active)} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''}/> Refresh</button><button className="primary" onClick={() => setEditor('new')}><Plus size={16}/> Add record</button></div></div>
-          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${current.title.toLowerCase()}…`}/>{search && <button className="clear-search" onClick={() => setSearch('')}><X size={14}/></button>}</div><div className="toolbar-right">{active === 'messages' && <div className="message-view-switch"><button className={messageView === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('all')}>All ({records.filter(item => !item.isDeleted).length})</button><button className={messageView === 'contact' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('contact')}>Contact</button><button className={messageView === 'service' ? 'filter-chip selected' : 'filter-chip'} onClick={() => { setMessageView('service'); setServiceCategory('all'); }}>Services</button><button className={messageView === 'legacy' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('legacy')}>Legacy</button></div>}{active === 'messages' && messageView === 'service' && <select aria-label="Filter service category" className="service-category-select" value={serviceCategory} onChange={event => setServiceCategory(event.target.value)}><option value="all">All services ({serviceCategories.length})</option>{serviceCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>}<button className={showDeleted ? 'filter-chip selected' : 'filter-chip'} onClick={() => setShowDeleted(!showDeleted)}><Trash2 size={14}/>{showDeleted ? 'Recycle bin' : 'Active records'}</button><button className="export-button" onClick={() => void exportAllData()} disabled={busy}><FileJson2 size={15}/> Export All Data</button><button className="export-button" onClick={() => document.getElementById('brandique-backup-import')?.click()} disabled={busy}><Upload size={15}/> Import Data</button><input id="brandique-backup-import" type="file" accept="application/json,.json" hidden onChange={event => void importAllData(event)}/><button className="export-button" onClick={() => exportRecords('json')} disabled={busy}><FileJson2 size={15}/> JSON</button><button className="export-button" onClick={() => exportRecords('csv')} disabled={busy}><ArrowDownToLine size={15}/> CSV</button></div></div>
+          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${current.title.toLowerCase()}…`}/>{search && <button className="clear-search" onClick={() => setSearch('')}><X size={14}/></button>}</div><div className="toolbar-right">{active === 'messages' && <div className="message-view-switch"><button className={messageView === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('all')}>All ({records.filter(item => !item.isDeleted).length})</button><button className={messageView === 'contact' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('contact')}>Contact</button><button className={messageView === 'service' ? 'filter-chip selected' : 'filter-chip'} onClick={() => { setMessageView('service'); setServiceCategory('all'); }}>Services</button><button className={messageView === 'legacy' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('legacy')}>Legacy</button></div>}{active === 'messages' && messageView === 'service' && <select aria-label="Filter service category" className="service-category-select" value={serviceCategory} onChange={event => setServiceCategory(event.target.value)}><option value="all">All services ({serviceCategories.length})</option>{serviceCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>}<button className={showDeleted ? 'filter-chip selected' : 'filter-chip'} onClick={() => setShowDeleted(!showDeleted)}><Trash2 size={14}/>{showDeleted ? 'Recycle bin' : 'Active records'}</button><button className="export-button export-all" onClick={() => void exportAllData()} disabled={busy}><FileJson2 size={15}/> Export All Data</button><button className="export-button import-all" onClick={() => document.getElementById('brandique-backup-import')?.click()} disabled={busy}><Upload size={15}/> Import Data</button><button className="export-button delete-all" onClick={() => void permanentlyDeleteAllData()} disabled={busy}><Trash2 size={15}/> Delete All Data</button><input id="brandique-backup-import" type="file" accept="application/json,.json" hidden onChange={event => void importAllData(event)}/><span className="toolbar-divider" aria-hidden="true"/><button className="export-button" onClick={() => exportRecords('json')} disabled={busy}><FileJson2 size={15}/> JSON</button><button className="export-button" onClick={() => exportRecords('csv')} disabled={busy}><ArrowDownToLine size={15}/> CSV</button></div></div>
 
           {loading ? <div className="empty-state"><LoaderCircle className="spin" size={28}/><strong>Loading records</strong><span>Securely requesting Firestore data…</span></div> :
           apiStatus === 'error' && !records.length ? <div className="empty-state"><CircleAlert size={28}/><strong>API setup required</strong><span>Check the Vercel server logs and required environment variables.</span><button className="secondary" onClick={() => void loadRecords(active)}><RefreshCw size={15}/> Try again</button></div> :
