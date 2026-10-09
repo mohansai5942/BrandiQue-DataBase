@@ -4,12 +4,14 @@ A standalone, responsive database management dashboard for BrandiQue Web Solutio
 
 ## What is included
 
-- React + TypeScript dashboard with collection navigation, search, editing, soft delete/recycle bin, restore, and JSON/CSV export.
+- React + TypeScript dashboard with collection navigation, search, project showcase cards, detailed leads, editing, soft delete/recycle bin, restore, and JSON/CSV export.
 - Firebase Authentication sign-in for administrators.
 - Vercel Node.js API functions protected by verified Firebase ID tokens and an explicit administrator email allowlist.
 - Firebase Admin SDK usage on the server only; no service-account credentials in browser code.
 - An allowlist of collections: `messages`, `projects`, `settings`, `websites`, `n8n_projects`, `n8n_project_forms`, and `prompts`.
-- A per-record size guard, a 100-record fetch limit, and basic security headers.
+- A per-record size guard, a 100-record fetch limit, exact-origin CORS checks, and security headers.
+- Project image/video URL entry, Firebase Storage uploads, and live media previews.
+- n8n workflow JSON validation and a node/connection diagram preview.
 
 ## Important integration note
 
@@ -67,7 +69,8 @@ All `/api/data` routes require `Authorization: Bearer <Firebase ID token>`, a ve
 - The live website currently has existing direct Firestore operations. Do not apply restrictive rules or change its Firebase config until those flows are migrated and staging-tested, or some website features may stop working.
 - Back up existing records before migrating. Test contact submissions, project listing, settings, website links, automation listings, and error/denied-access paths before production cutover.
 - This dashboard returns at most 100 records per collection in the first version. For larger collections, add cursor-based pagination before relying on it as a complete export tool.
-- This version does not upload binary assets. Keep images and videos in a dedicated file store and save URLs in Firestore; avoid Base64 files in documents.
+- Project images and videos upload directly to Firebase Storage after Firebase Authentication. Before enabling uploads, create/verify the Storage bucket in the new project and deploy the rules in `storage.rules.example` after replacing its admin email placeholder with every exact email in `ADMIN_EMAILS`. The rules keep writes limited to verified admin accounts, cap each file at 25 MB, and allow public reads for portfolio media. Firebase will deny browser uploads until those exact rules are configured. Do not store Base64 media in Firestore.
+- The editor accepts up to 10 project images and 5 videos. Video playback depends on the Storage bucket and the browser's codec support.
 
 ## Local development
 

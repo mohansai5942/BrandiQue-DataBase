@@ -1,12 +1,15 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, Boxes, BriefcaseBusiness,
   Check, ChevronDown, CircleAlert, Database, FileJson2, FileText, Globe2, LayoutDashboard,
-  LoaderCircle, LockKeyhole, LogOut, Mail, MessageSquareText, MoreHorizontal, Pencil,
-  Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Users, WandSparkles, X
+  ExternalLink, Eye, Film, ImagePlus, LoaderCircle, LockKeyhole, LogOut, Mail, MessageSquareText, MoreHorizontal, Pencil,
+  Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, Users, WandSparkles, X
 } from 'lucide-react';
 import { onAuthStateChanged, reload, sendEmailVerification, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
-import { auth, firebaseConfigured } from './firebase';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { auth, firebaseConfigured, storage } from './firebase';
+import { getMessageClassification, isRecordPayload } from '../api/security';
+import { WorkflowCanvas } from './WorkflowCanvas';
 
 type CollectionName = 'messages' | 'projects' | 'settings' | 'websites' | 'n8n_projects' | 'n8n_project_forms' | 'prompts';
 type RecordValue = Record<string, unknown> & { id: string };
@@ -68,6 +71,7 @@ function LoginScreen() {
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(''); setBusy(true);
     try {
+      if (!auth) throw new Error('Firebase Authentication is not configured.');
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch {
       setError('Login failed. Check the email/password and confirm the account is enabled in Firebase Authentication.');
@@ -106,6 +110,13 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
   const [complexDraft, setComplexDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<'fields' | 'json'>('fields');
   const [error, setError] = useState('');
+  const [imageUrlDraft, setImageUrlDraft] = useState('');
+  const [videoUrlDraft, setVideoUrlDraft] = useState('');
+  const [mediaTab, setMediaTab] = useState<'images' | 'videos' | 'link'>('images');
+  const [uploading, setUploading] = useState(false);
+
+  const projectImages = Array.isArray(fields.images) ? fields.images.map(String) : (fields.image ? [String(fields.image)] : []);
+  const projectVideos = Array.isArray(fields.videos) ? fields.videos.map(String) : (fields.video ? [String(fields.video)] : []);
 
   function updateField(key: string, value: unknown) {
     const next = { ...fields, [key]: value };
@@ -150,21 +161,87 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
       }
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Record must be a JSON object.');
       if (typeof parsed.workflowJson === 'string' && parsed.workflowJson.trim()) {
-        try { JSON.parse(parsed.workflowJson); } catch { throw new Error('Workflow JSON must contain valid JSON syntax.'); }
+        try {
+          const workflow = JSON.parse(parsed.workflowJson);
+          if (!workflow || typeof workflow !== 'object' || !Array.isArray(workflow.nodes)) throw new Error('Workflow must contain a nodes array.');
+          parsed.nodeCount = workflow.nodes.length;
+        } catch (workflowError) { throw new Error(workflowError instanceof Error && workflowError.message === 'Workflow must contain a nodes array.' ? workflowError.message : 'Workflow JSON must contain valid JSON syntax.'); }
+      }
+      if (section.id === 'projects') {
+        parsed.images = projectImages.slice(0, 10);
+        parsed.videos = projectVideos.slice(0, 5);
+        parsed.image = projectImages[0] || '';
+        parsed.video = projectVideos[0] || '';
       }
       void onSave(parsed, initial?.id);
     } catch (e) { setError(e instanceof Error ? e.message : 'Please correct the record before saving.'); }
   }
 
+  function addMediaUrl(kind: 'images' | 'videos') {
+    const draft = kind === 'images' ? imageUrlDraft.trim() : videoUrlDraft.trim();
+    if (!draft) return;
+    try {
+      const parsed = new URL(draft);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Use an http or https URL.');
+    } catch {
+      setError('Enter a complete http(s) media URL.');
+      return;
+    }
+    const existing = kind === 'images' ? projectImages : projectVideos;
+    const max = kind === 'images' ? 10 : 5;
+    if (existing.length >= max) { setError(`A project can have up to ${max} ${kind}.`); return; }
+    if (existing.includes(draft)) { setError('That URL is already in this project.'); return; }
+    updateField(kind, [...existing, draft]);
+    if (kind === 'images') setImageUrlDraft(''); else setVideoUrlDraft('');
+  }
+
+  async function uploadMedia(event: ChangeEvent<HTMLInputElement>, kind: 'images' | 'videos') {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+    if (!storage) { setError('Firebase Storage is not configured for this dashboard.'); return; }
+    const current = kind === 'images' ? projectImages : projectVideos;
+    const limit = kind === 'images' ? 10 : 5;
+    const validType = kind === 'images' ? (file: File) => file.type.startsWith('image/') : (file: File) => file.type.startsWith('video/');
+    if (current.length + files.length > limit) { setError(`A project can have up to ${limit} ${kind}.`); return; }
+    if (files.some(file => !validType(file) || file.size > 25 * 1024 * 1024)) {
+      setError(kind === 'images' ? 'Choose image files no larger than 25 MB each.' : 'Choose video files no larger than 25 MB each.');
+      return;
+    }
+    setUploading(true); setError('');
+    try {
+      const uploaded: string[] = [];
+      for (const file of files) {
+        const filename = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+        const destination = ref(storage, `dashboard/projects/${crypto.randomUUID()}-${filename}`);
+        const result = await uploadBytes(destination, file, { contentType: file.type });
+        uploaded.push(await getDownloadURL(result.ref));
+      }
+      updateField(kind, [...current, ...uploaded]);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? `Upload failed: ${uploadError.message}. Confirm the Firebase Storage bucket and admin-only Storage rules are configured.` : 'Upload failed. Confirm Firebase Storage is configured.');
+    } finally { setUploading(false); }
+  }
+
   const entries = Object.entries(fields).filter(([key]) => key !== 'id');
   return <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <form className="editor-modal" onSubmit={submit}>
-      <div className="modal-head"><div><div className="eyebrow">{initial ? 'EDIT EXISTING RECORD' : 'CREATE RECORD'}</div><h2>{initial ? 'Update record' : `New ${section.noun}`}</h2><p>Validated changes · Saved to the configured Firestore project</p></div><button type="button" className="icon-btn" onClick={onClose} aria-label="Close editor"><X size={19}/></button></div>
+      <div className="modal-head"><div><div className="eyebrow">{initial ? 'EDIT EXISTING RECORD' : 'CREATE RECORD'}</div><h2>{initial ? 'Update record' : section.id === 'projects' ? 'New project' : section.id === 'n8n_projects' ? 'New workflow' : `New ${section.noun}`}</h2><p>Validated changes · Saved to the configured Firestore project</p></div><button type="button" className="icon-btn" onClick={onClose} aria-label="Close editor"><X size={19}/></button></div>
       <div className="editor-warning"><ShieldCheck size={17}/><span>Changes are written to the configured Firestore project. The public site reflects them only after its integration is pointed to this same project/API.</span></div>
       <div className="editor-tabs"><button type="button" onClick={() => switchMode('fields')} className={mode === 'fields' ? 'editor-tab active' : 'editor-tab'}><Settings2 size={14}/> Form fields</button><button type="button" onClick={() => switchMode('json')} className={mode === 'json' ? 'editor-tab active' : 'editor-tab'}><FileJson2 size={14}/> Advanced JSON</button><span>{mode === 'fields' ? `${entries.length} fields` : 'Raw record payload'}</span></div>
       {mode === 'json' ? <textarea className={'json-editor ' + ((section.id === 'projects' || section.id === 'n8n_projects') ? 'with-live-preview' : '')} spellCheck={false} value={raw} onChange={e => setRaw(e.target.value)} aria-label="Record JSON"/> :
         <div className={'field-editor-grid ' + ((section.id === 'projects' || section.id === 'n8n_projects') ? 'with-live-preview' : '')}>
-          {entries.map(([key, value]) => {
+          {section.id === 'projects' && <div className="media-editor wide-field">
+            <div className="media-editor-heading"><div><strong>Project images</strong><small>{projectImages.length}/10 images</small></div><label className="upload-control"><Upload size={15}/> Upload images<input type="file" accept="image/*" multiple onChange={event => void uploadMedia(event, 'images')} disabled={uploading}/></label></div>
+            <div className="media-url-row"><input aria-label="Project image URL" type="url" placeholder="Paste an image URL" value={imageUrlDraft} onChange={event => setImageUrlDraft(event.target.value)}/><button type="button" className="secondary" onClick={() => addMediaUrl('images')}><Plus size={14}/> Add URL</button></div>
+            {projectImages.length > 0 && <div className="media-items">{projectImages.map((url, index) => <div className="media-item" key={`${url}-${index}`}><img src={url} alt={`Project image ${index + 1}`} onError={event => { event.currentTarget.style.opacity = '.35'; }}/><span>Image {index + 1}</span><button type="button" aria-label={`Remove image ${index + 1}`} onClick={() => updateField('images', projectImages.filter((_, itemIndex) => itemIndex !== index))}><X size={14}/></button></div>)}</div>}
+            <div className="media-editor-heading video-heading"><div><strong>Project videos</strong><small>{projectVideos.length}/5 videos</small></div><label className="upload-control"><Upload size={15}/> Upload videos<input type="file" accept="video/*" multiple onChange={event => void uploadMedia(event, 'videos')} disabled={uploading}/></label></div>
+            <div className="media-url-row"><input aria-label="Project video URL" type="url" placeholder="Paste a video URL" value={videoUrlDraft} onChange={event => setVideoUrlDraft(event.target.value)}/><button type="button" className="secondary" onClick={() => addMediaUrl('videos')}><Plus size={14}/> Add URL</button></div>
+            {projectVideos.length > 0 && <div className="media-items video-items">{projectVideos.map((url, index) => <div className="media-item" key={`${url}-${index}`}><Film size={17}/><span>Video {index + 1}: {url}</span><button type="button" aria-label={`Remove video ${index + 1}`} onClick={() => updateField('videos', projectVideos.filter((_, itemIndex) => itemIndex !== index))}><X size={14}/></button></div>)}</div>}
+            {uploading && <small className="upload-progress"><LoaderCircle className="spin" size={14}/> Uploading media to Firebase Storage…</small>}
+            {!storage && <small className="upload-progress">Storage upload needs an active bucket and admin-only Storage rules in Firebase Console.</small>}
+          </div>}
+          {entries.filter(([key]) => !(section.id === 'projects' && ['image', 'images', 'video', 'videos'].includes(key))).map(([key, value]) => {
             const label = titleFromKey(key);
             const stringValue = value === null || value === undefined ? '' : String(value);
             const isLongText = /message|description|^desc$|prompt|workflowjson/i.test(key);
@@ -182,6 +259,7 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
               const currentText = complexDraft[key] ?? JSON.stringify(value, null, 2);
               return <label className="editor-field wide-field" key={key}><span>{label}</span><textarea value={currentText} spellCheck={false} onChange={e => setComplexDraft(old => ({ ...old, [key]: e.target.value }))} rows={Math.min(8, Math.max(3, currentText.split('\n').length))}/><small>Enter a valid JSON object.</small></label>;
             }
+            if (key === 'workflowJson' && section.id === 'n8n_projects') return <label className="editor-field wide-field" key={key}><span>{label}</span><div className="json-toolbar"><button type="button" className="secondary" onClick={() => { try { updateField(key, JSON.stringify(JSON.parse(stringValue), null, 2)); } catch { setError('Workflow JSON must be valid before formatting.'); } }}><Sparkles size={14}/> Format JSON</button><small>JSON syntax is validated before save; node count updates automatically.</small></div><textarea value={stringValue} onChange={e => updateField(key, e.target.value)} rows={12} spellCheck={false}/></label>;
             if (isLongText || stringValue.length > 100) return <label className="editor-field wide-field" key={key}><span>{label}</span><textarea value={stringValue} onChange={e => updateField(key, e.target.value)} rows={key.toLowerCase().includes('workflowjson') ? 8 : 3} spellCheck={false}/></label>;
             const lowerKey = key.toLowerCase();
             const inputType = lowerKey.includes('email') ? 'email' : (lowerKey.includes('url') || lowerKey.endsWith('link') || lowerKey.includes('image') || lowerKey.includes('video') || lowerKey.includes('instagram') || lowerKey.includes('whatsapp')) ? 'text' : (typeof value === 'number' ? 'number' : 'text');
@@ -198,20 +276,42 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
       {(section.id === 'projects' || section.id === 'n8n_projects') && <aside className={'live-preview-panel ' + (section.id === 'n8n_projects' ? 'workflow-preview' : 'project-preview')} aria-live="polite">
         <div className="live-preview-heading"><span><Activity size={15}/> SIDE PREVIEW PANEL</span><span className="live-pill">Live Updates</span></div>
         {section.id === 'projects' ? <>
-          <div className="preview-tabs"><span className="active"><Globe2 size={13}/> Images ({Array.isArray(fields.images) ? fields.images.length : fields.image ? 1 : 0})</span><span><Activity size={13}/> Videos ({Array.isArray(fields.videos) ? fields.videos.length : fields.video ? 1 : 0})</span><span><Globe2 size={13}/> Link</span></div>
-          <div className="project-preview-media">{(() => { const imageUrl = Array.isArray(fields.images) && fields.images.length ? fields.images[0] : fields.image; return imageUrl ? <img src={String(imageUrl)} alt="Project live preview" onError={e => { e.currentTarget.style.display = 'none'; }}/> : <div className="preview-placeholder"><Globe2 size={28}/><strong>Image Preview Unavailable</strong><small>Enter an image URL in the form fields</small></div>; })()}</div>
+          <div className="preview-tabs"><button type="button" className={mediaTab === 'images' ? 'active' : ''} onClick={() => setMediaTab('images')}><ImagePlus size={13}/> Images ({projectImages.length})</button><button type="button" className={mediaTab === 'videos' ? 'active' : ''} onClick={() => setMediaTab('videos')}><Film size={13}/> Videos ({projectVideos.length})</button><button type="button" className={mediaTab === 'link' ? 'active' : ''} onClick={() => setMediaTab('link')}><Globe2 size={13}/> Link</button></div>
+          <div className="project-preview-media">{mediaTab === 'images' ? projectImages[0] ? <img src={projectImages[0]} alt="Project live preview"/> : <div className="preview-placeholder"><ImagePlus size={28}/><strong>No project image yet</strong><small>Add a URL or upload an image</small></div> : mediaTab === 'videos' ? projectVideos[0] ? <video src={projectVideos[0]} controls preload="metadata" aria-label="Project video preview"/> : <div className="preview-placeholder"><Film size={28}/><strong>No project video yet</strong><small>Add a URL or upload a video</small></div> : fields.link ? <a className="preview-link-card" href={String(fields.link)} target="_blank" rel="noreferrer"><ExternalLink size={20}/><strong>Open project link</strong><span>{String(fields.link)}</span></a> : <div className="preview-placeholder"><Globe2 size={28}/><strong>No external link</strong><small>Add an action URL to preview it here</small></div>}</div>
           <div className="preview-section-label">WEBSITE SHOWCASE CARD MOCKUP</div>
           <div className="preview-project-copy"><span className="preview-category">{String(fields.category || 'CATEGORY NAME')}</span><span className="preview-type">{String(fields.type || 'main').toUpperCase()}</span><h3>{String(fields.title || 'Project title placeholder')}</h3><p>{String(fields.desc || 'Project description will appear here as you type…')}</p><div className="preview-tags">{(Array.isArray(fields.tags) ? fields.tags : String(fields.tags || '').split(',')).filter(Boolean).slice(0,6).map((tag,i)=><span key={i}>{String(tag).trim()}</span>)}</div>{Boolean(fields.link) && <div className="preview-link"><Globe2 size={13}/>{String(fields.link)}</div>}</div>
         </> : <>
-          <div className="workflow-preview-canvas">{(() => { let parsed: {nodes?: Array<{id?: string; name?: string; type?: string}>} = {}; try { parsed = JSON.parse(String(fields.workflowJson || '{}')); } catch { return <div className="preview-invalid"><CircleAlert size={18}/> Workflow JSON has a syntax error.</div>; } const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : []; return nodes.length ? <><div className="workflow-node-count">{nodes.length} NODES</div><div className="workflow-node-list">{nodes.slice(0,12).map((node,i)=><div className="workflow-node" key={String(node.id || i)}><span className="workflow-node-icon"><Boxes size={14}/></span><span><strong>{String(node.name || node.type || ('Node ' + (i+1)))}</strong><small>{String(node.type || 'Workflow node').replace(/^n8n-nodes-base\\./,'')}</small></span></div>)}</div>{nodes.length>12 && <div className="preview-note">Showing 12 of {nodes.length} nodes</div>}</> : <div className="preview-placeholder"><Boxes size={28}/><strong>Workflow preview</strong><small>Add nodes in Workflow JSON</small></div>; })()}</div>
+          <WorkflowCanvas value={fields.workflowJson} />
           <div className="preview-project-copy"><span className="preview-category">{String(fields.category || 'AI & AUTOMATION')}</span><h3>{String(fields.title || 'Workflow title placeholder')}</h3><p>{String(fields.desc || 'Workflow summary will appear here as you type…')}</p><div className="preview-tags">{(Array.isArray(fields.tags) ? fields.tags : String(fields.tags || '').split(',')).filter(Boolean).slice(0,6).map((tag,i)=><span key={i}>{String(tag).trim()}</span>)}</div><div className="workflow-preview-meta"><span>{String(fields.testWorkflowUrl || 'No test URL added')}</span><span>{fields.allowClientRequest ? 'Client form enabled' : 'Client form disabled'}</span></div></div>
         </>}
         <div className="preview-note">Live content preview · save to write changes to Firestore</div>
       </aside>}
       {error && <div className="notice error">{error}</div>}
-      <div className="modal-foot"><span className="subtle">{initial ? `Document ID: ${initial.id}` : `Collection: ${section.id}`}</span><div className="actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Save record</button></div></div>
+      <div className="modal-foot"><span className="subtle">{initial ? `Document ID: ${initial.id}` : `Collection: ${section.id}`}</span><div className="actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy || uploading}>{busy ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} {section.id === 'projects' ? initial ? 'Save Project' : 'Publish Project' : section.id === 'n8n_projects' ? initial ? 'Save Workflow' : 'Publish Workflow' : 'Save record'}</button></div></div>
     </form>
   </div>;
+}
+
+function ProjectDetailDialog({ record, onClose }: { record: RecordValue; onClose: () => void }) {
+  const images = Array.isArray(record.images) ? record.images.map(String) : record.image ? [String(record.image)] : [];
+  const videos = Array.isArray(record.videos) ? record.videos.map(String) : record.video ? [String(record.video)] : [];
+  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="project-detail-modal" aria-label="Project preview">
+      <header><div><span className="eyebrow">PROJECT SHOWCASE PREVIEW</span><h2>{String(record.title || 'Untitled project')}</h2></div><button className="icon-btn" onClick={onClose} aria-label="Close project preview"><X size={18}/></button></header>
+      {images[0] && <img className="project-detail-hero" src={images[0]} alt={String(record.title || 'Project')} />}
+      <div className="project-detail-copy"><span className="preview-category">{String(record.category || 'PROJECT')}</span><p>{String(record.desc || record.description || 'No description provided.')}</p><div className="preview-tags">{(Array.isArray(record.tags) ? record.tags : []).map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}</div>{Boolean(record.link) && <a className="secondary" href={String(record.link)} target="_blank" rel="noreferrer"><ExternalLink size={14}/> Open project link</a>}</div>
+      {videos.length > 0 && <div className="project-detail-videos">{videos.map((url, index) => <video key={`${url}-${index}`} src={url} controls preload="metadata" aria-label={`Project video ${index + 1}`}/>)}</div>}
+    </section>
+  </div>;
+}
+
+function WorkflowDetailDialog({ record, onClose, onOpenEnquiries }: { record: RecordValue; onClose: () => void; onOpenEnquiries: () => void }) {
+  const tags = Array.isArray(record.tags) ? record.tags : [];
+  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="workflow-detail-modal">
+    <header><div><span className="eyebrow">N8N WORKFLOW PREVIEW</span><h2>{getSummary(record)}</h2></div><button className="icon-btn" onClick={onClose} aria-label="Close workflow preview"><X size={18}/></button></header>
+    <WorkflowCanvas value={record.workflowJson} />
+    <div className="workflow-detail-copy"><span className="workflow-category-pill">{String(record.category || 'Automation')}</span><p>{String(record.desc || record.description || 'No workflow description provided.')}</p><div className="preview-tags">{tags.map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}</div><div className="workflow-detail-actions">{Boolean(record.testWorkflowUrl) && <a className="secondary" href={String(record.testWorkflowUrl)} target="_blank" rel="noreferrer"><ExternalLink size={14}/> Test workflow</a>}<span>{record.allowClientRequest ? 'Client inquiry form enabled' : 'Client inquiry form disabled'}</span><button className="secondary" onClick={onOpenEnquiries}><Users size={14}/> View client enquiries</button></div></div>
+  </section></div>;
 }
 
 export default function App() {
@@ -224,8 +324,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
-  const [messageView, setMessageView] = useState<'all' | 'contact' | 'service'>('all');
+  const [messageView, setMessageView] = useState<'all' | 'contact' | 'service' | 'legacy'>('all');
+  const [serviceCategory, setServiceCategory] = useState('all');
+  const [projectType, setProjectType] = useState<'all' | 'main' | 'portfolio' | 'figma' | 'client'>('all');
+  const [workflowCategory, setWorkflowCategory] = useState('all');
   const [editor, setEditor] = useState<RecordValue | null | 'new'>(null);
+  const [viewingProject, setViewingProject] = useState<RecordValue | null>(null);
+  const [viewingWorkflow, setViewingWorkflow] = useState<RecordValue | null>(null);
   const [toast, setToast] = useState('');
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const current = SECTIONS.find(s => s.id === active)!;
@@ -258,18 +363,25 @@ export default function App() {
   const visible = useMemo(() => records.filter(record => {
     if (!showDeleted && record.isDeleted === true) return false;
     if (showDeleted && record.isDeleted !== true) return false;
-    const serviceKeywords = ['full-stack', 'full stack', 'react', 'next.js', 'web development', 'wordpress', 'wp', 'branding', 'identity', 'logo', 'digital marketing', 'marketing', 'social', 'ai automation', 'ai', 'agent', 'automation', 'n8n', 'bot'];
-    const isServiceEnquiry = record.source === 'service' || (record.serviceDetails && Object.keys(record.serviceDetails as Record<string, unknown>).length > 0) || serviceKeywords.some(keyword => String(record.service || '').toLowerCase().includes(keyword));
-    if (active === 'messages' && messageView === 'contact' && isServiceEnquiry) return false;
-    if (active === 'messages' && messageView === 'service' && !isServiceEnquiry) return false;
+    const classification = getMessageClassification(record);
+    if (active === 'messages' && messageView !== 'all' && classification !== messageView) return false;
+    if (active === 'messages' && messageView === 'service' && serviceCategory !== 'all' && String(record.service || '') !== serviceCategory) return false;
+    if (active === 'projects' && projectType !== 'all' && String(record.type || 'main').toLowerCase() !== projectType) return false;
+    if (active === 'n8n_projects' && workflowCategory !== 'all' && String(record.category || 'Other') !== workflowCategory) return false;
     const q = search.toLowerCase().trim();
     return !q || JSON.stringify(record).toLowerCase().includes(q);
-  }), [records, search, showDeleted, active, messageView]);
+  }), [records, search, showDeleted, active, messageView, serviceCategory, projectType, workflowCategory]);
 
   const dashboardCounts = useMemo(() => ({
     total: Object.values(counts).reduce((total, value) => total + (value || 0), 0),
     leads: counts.messages || 0, projects: counts.projects || 0, automations: counts.n8n_projects || 0
   }), [counts]);
+  const serviceCategories = useMemo(() => Array.from(new Set(records
+    .filter(record => getMessageClassification(record) === 'service')
+    .map(record => String(record.service || 'Other service')))), [records]);
+  const workflowCategories = useMemo(() => Array.from(new Set(records
+    .filter(record => !record.isDeleted)
+    .map(record => String(record.category || 'Other')))), [records]);
 
   async function saveRecord(value: Record<string, unknown>, id?: string) {
     if (!user) return;
@@ -330,7 +442,7 @@ export default function App() {
     if (!user) return;
     try {
       await reload(user);
-      const refreshed = auth.currentUser;
+      const refreshed = auth?.currentUser;
       if (refreshed) setUser(refreshed);
       if (refreshed?.emailVerified) {
         notify('Email verified. Refreshing your secure data session…');
@@ -344,7 +456,7 @@ export default function App() {
     }
   }
 
-  async function signOutUser() { await signOut(auth); setRecords([]); setCounts({}); }
+  async function signOutUser() { if (auth) await signOut(auth); setRecords([]); setCounts({}); }
 
   if (authLoading) return <div className="boot-screen"><div className="brand-mark"><Database size={22}/></div><LoaderCircle className="spin" size={24}/><span>Securing your workspace…</span></div>;
   if (!user) return <LoginScreen/>;
@@ -385,12 +497,18 @@ export default function App() {
 
         <section className="data-panel">
           <div className="panel-heading"><div><div className="eyebrow">COLLECTION / {String(SECTIONS.findIndex(s => s.id === active) + 1).padStart(2,'0')}</div><h2>{current.title}</h2><p>{current.subtitle} <span className="separator">·</span> Showing up to 100 records</p></div><div className="panel-heading-actions"><button className="secondary" onClick={() => void loadRecords(active)} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''}/> Refresh</button><button className="primary" onClick={() => setEditor('new')}><Plus size={16}/> Add record</button></div></div>
-          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${current.title.toLowerCase()}…`}/>{search && <button className="clear-search" onClick={() => setSearch('')}><X size={14}/></button>}</div><div className="toolbar-right">{active === 'messages' && <div className="message-view-switch"><button className={messageView === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('all')}>All</button><button className={messageView === 'contact' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('contact')}>Contact Form</button><button className={messageView === 'service' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('service')}>Service Enquiries</button></div>}<button className={showDeleted ? 'filter-chip selected' : 'filter-chip'} onClick={() => setShowDeleted(!showDeleted)}><Trash2 size={14}/>{showDeleted ? 'Recycle bin' : 'Active records'}</button><button className="export-button" onClick={() => exportRecords('json')}><FileJson2 size={15}/> JSON</button><button className="export-button" onClick={() => exportRecords('csv')}><ArrowDownToLine size={15}/> CSV</button></div></div>
+          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${current.title.toLowerCase()}…`}/>{search && <button className="clear-search" onClick={() => setSearch('')}><X size={14}/></button>}</div><div className="toolbar-right">{active === 'messages' && <div className="message-view-switch"><button className={messageView === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('all')}>All ({records.filter(item => !item.isDeleted).length})</button><button className={messageView === 'contact' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('contact')}>Contact</button><button className={messageView === 'service' ? 'filter-chip selected' : 'filter-chip'} onClick={() => { setMessageView('service'); setServiceCategory('all'); }}>Services</button><button className={messageView === 'legacy' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('legacy')}>Legacy</button></div>}{active === 'messages' && messageView === 'service' && <select aria-label="Filter service category" className="service-category-select" value={serviceCategory} onChange={event => setServiceCategory(event.target.value)}><option value="all">All services ({serviceCategories.length})</option>{serviceCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>}<button className={showDeleted ? 'filter-chip selected' : 'filter-chip'} onClick={() => setShowDeleted(!showDeleted)}><Trash2 size={14}/>{showDeleted ? 'Recycle bin' : 'Active records'}</button><button className="export-button" onClick={() => exportRecords('json')}><FileJson2 size={15}/> JSON</button><button className="export-button" onClick={() => exportRecords('csv')}><ArrowDownToLine size={15}/> CSV</button></div></div>
 
           {loading ? <div className="empty-state"><LoaderCircle className="spin" size={28}/><strong>Loading records</strong><span>Securely requesting Firestore data…</span></div> :
           apiStatus === 'error' && !records.length ? <div className="empty-state"><CircleAlert size={28}/><strong>API setup required</strong><span>Check the Vercel server logs and required environment variables.</span><button className="secondary" onClick={() => void loadRecords(active)}><RefreshCw size={15}/> Try again</button></div> :
           visible.length === 0 ? <div className="empty-state"><Database size={29}/><strong>{showDeleted ? 'Recycle bin is empty' : 'No records found'}</strong><span>{search ? 'Try a different search phrase.' : 'Add a record or wait for the public website to receive new submissions.'}</span>{!showDeleted && <button className="primary" onClick={() => setEditor('new')}><Plus size={16}/> Create first record</button>}</div> :
-          <div className="record-table-wrap"><table className="record-table"><thead><tr><th>RECORD</th><th>PREVIEW</th><th>UPDATED / CREATED</th><th>STATUS</th><th className="align-right">ACTIONS</th></tr></thead><tbody>{visible.map(record => {
+          active === 'projects' && !showDeleted ? <div className="project-directory">
+            <div className="project-category-tabs">{([['all', 'All projects'], ['main', 'Main Projects'], ['portfolio', 'Portfolio Projects'], ['figma', 'Figma Projects'], ['client', 'Client Projects']] as const).map(([value, label]) => <button key={value} type="button" className={projectType === value ? 'project-category-tab active' : 'project-category-tab'} onClick={() => setProjectType(value)}>{label}<span>{records.filter(record => !record.isDeleted && (value === 'all' || String(record.type || 'main').toLowerCase() === value)).length}</span></button>)}</div>
+            <div className="project-grid">{visible.map(record => { const images = Array.isArray(record.images) ? record.images : []; const image = String(images[0] || record.image || ''); const tags = Array.isArray(record.tags) ? record.tags : []; return <article className="project-card" key={record.id}><button type="button" className="project-card-preview" onClick={() => setViewingProject(record)} aria-label={`View ${getSummary(record)}`}>{image ? <img src={image} alt="" loading="lazy"/> : <span><BriefcaseBusiness size={26}/><small>No cover image</small></span>}<b>{String(record.type || 'main').toUpperCase()}</b></button><div className="project-card-body"><span className="project-card-category">{String(record.category || 'PROJECT')}</span><h3>{getSummary(record)}</h3><p>{String(record.desc || record.description || 'Project description not added.')}</p><div className="project-card-tags">{tags.slice(0, 4).map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}{tags.length > 4 && <span>+{tags.length - 4}</span>}</div><div className="project-card-actions"><button type="button" className="table-action" onClick={() => setViewingProject(record)}><Eye size={14}/> View</button><button type="button" className="table-action" onClick={() => setEditor(record)}><Pencil size={14}/> Edit</button><button type="button" className="table-action danger" onClick={() => void softDelete(record)} disabled={busy} title="Move to recycle bin"><Trash2 size={14}/></button></div></div></article>; })}</div>
+          </div> : active === 'n8n_projects' && !showDeleted ? <div className="workflow-directory">
+            <div className="workflow-category-tabs">{['all', ...workflowCategories].map(category => { const label = category === 'all' ? 'All workflows' : category; const categoryCount = category === 'all' ? records.filter(record => !record.isDeleted).length : records.filter(record => !record.isDeleted && String(record.category || 'Other') === category).length; return <button type="button" className={`workflow-category-pill workflow-filter${workflowCategory === category ? ' selected' : ''}`} key={category} onClick={() => setWorkflowCategory(category)}>{label}<span>{categoryCount}</span></button>; })}</div>
+            <div className="workflow-grid">{visible.map(record => <article className="workflow-card" key={record.id}><WorkflowCanvas value={record.workflowJson} compact/><div className="workflow-card-copy"><span className="workflow-category-pill">{String(record.category || 'Automation')}</span><h3>{getSummary(record)}</h3><p>{String(record.desc || record.description || 'Workflow description not added.')}</p><div className="project-card-tags">{(Array.isArray(record.tags) ? record.tags : []).slice(0, 5).map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}</div><div className="workflow-card-meta"><span>{Number(record.nodeCount) || 0} nodes</span><span>{record.allowClientRequest ? 'Client form on' : 'Client form off'}</span></div><div className="project-card-actions"><button type="button" className="table-action" onClick={() => setViewingWorkflow(record)}><Eye size={14}/> Preview</button><button type="button" className="table-action" onClick={() => setEditor(record)}><Pencil size={14}/> Edit</button><button type="button" className="table-action danger" onClick={() => void softDelete(record)} disabled={busy} title="Move to recycle bin"><Trash2 size={14}/></button></div></div></article>)}</div>
+          </div> : (active === 'messages' || active === 'n8n_project_forms') && !showDeleted ? <div className="lead-directory">{visible.map(record => { const details = isRecordPayload(record.serviceDetails) ? Object.entries(record.serviceDetails) : []; const classification = active === 'n8n_project_forms' ? 'contact' : getMessageClassification(record); const badge = active === 'n8n_project_forms' ? String(record.projectTitle || 'Automation enquiry') : classification === 'service' ? String(record.service || 'Service enquiry') : classification === 'contact' ? 'Contact form' : 'Legacy record'; const otherFields = Object.entries(record).filter(([key, value]) => !['id', 'name', 'email', 'phone', 'service', 'budget', 'message', 'serviceDetails', 'source', 'createdAt', 'updatedAt', 'isDeleted', 'deletedAt'].includes(key) && value !== '' && value !== null && value !== undefined); return <article className="lead-card" key={record.id}><div className="lead-card-heading"><div><span className={`lead-kind ${classification}`}>{badge}</span><h3>{String(record.name || record.email || 'Unknown contact')}</h3></div><span className="timestamp">{pretty(record.createdAt || record.updatedAt)}</span></div><div className="lead-contact-grid">{[['Email', record.email], ['Phone', record.phone], ['Budget', record.budget], ['Service', record.service]].filter(([, value]) => value !== undefined && value !== '').map(([label, value]) => <div key={String(label)}><small>{String(label)}</small><strong>{pretty(value)}</strong></div>)}</div>{Boolean(record.message) && <div className="lead-message"><small>MESSAGE / REQUIREMENTS</small><p>{String(record.message)}</p></div>}{details.length > 0 && <div className="lead-details"><small>SERVICE DETAILS</small><dl>{details.map(([key, value]) => <div key={key}><dt>{titleFromKey(key)}</dt><dd>{pretty(value)}</dd></div>)}</dl></div>}{otherFields.length > 0 && <details className="lead-extra"><summary>Additional submitted fields ({otherFields.length})</summary><dl>{otherFields.map(([key, value]) => <div key={key}><dt>{titleFromKey(key)}</dt><dd>{pretty(value)}</dd></div>)}</dl></details>}<div className="lead-card-actions"><span className="subtle">ID: {record.id}</span><button className="table-action" onClick={() => setEditor(record)}><Pencil size={14}/> Edit</button><button className="table-action danger" onClick={() => void softDelete(record)} disabled={busy}><Trash2 size={14}/> Recycle</button></div></article>; })}</div> : <div className="record-table-wrap"><table className="record-table"><thead><tr><th>RECORD</th><th>PREVIEW</th><th>UPDATED / CREATED</th><th>STATUS</th><th className="align-right">ACTIONS</th></tr></thead><tbody>{visible.map(record => {
             const summary = getSummary(record);
             const detail = String(record.email || record.category || record.service || record.url || record.desc || record.message || record.phone || '');
             const timestamp = pretty(record.updatedAt || record.createdAt || record.deletedAt);
@@ -401,6 +519,8 @@ export default function App() {
       </section>
     </main>
     {editor && <RecordEditor key={typeof editor === 'string' ? `new-${active}` : editor.id} section={current} initial={editor === 'new' ? null : editor} onClose={() => setEditor(null)} onSave={saveRecord} busy={busy}/>}
+    {viewingProject && <ProjectDetailDialog record={viewingProject} onClose={() => setViewingProject(null)}/>}
+    {viewingWorkflow && <WorkflowDetailDialog record={viewingWorkflow} onClose={() => setViewingWorkflow(null)} onOpenEnquiries={() => { setViewingWorkflow(null); setActive('n8n_project_forms'); }}/>}
     {toast && <div className="toast"><Check size={16}/>{toast}</div>}
   </div>;
 }

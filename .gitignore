@@ -1,6 +1,7 @@
 node_modules
 dist
 .vercel
+.npm-cache/
 .env
 .env.*
 !.env.example
