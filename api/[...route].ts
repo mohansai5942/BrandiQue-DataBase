@@ -57,7 +57,7 @@ async function requireAdmin(req: VercelRequest) {
   const authHeader = req.headers.authorization || '';
   const match = /^Bearer\s+(.+)$/i.exec(authHeader);
   if (!match) throw Object.assign(new Error('Sign-in required.'), { statusCode: 401 });
-  const decoded = await getAuth(getApp()).verifyIdToken(match[1], true);
+  const decoded = await getAuth(getApp()).verifyIdToken(match[1]);
   const email = (decoded.email || '').toLowerCase().trim();
   const allowedEmails = (process.env.ADMIN_EMAILS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
   if (!email || !allowedEmails.includes(email) || decoded.email_verified !== true) {
