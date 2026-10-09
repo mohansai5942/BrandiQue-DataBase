@@ -2,9 +2,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
-import { authorizeAdminToken } from './admin-auth';
-import { getCorsHeaders, getErrorMessage, getErrorStatus, isRecordPayload } from './security';
-import { isDashboardCollection, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload } from './validation';
+import { authorizeAdminToken } from './admin-auth.js';
+import { getCorsHeaders, getErrorMessage, getErrorStatus, isRecordPayload } from './security.js';
+import { isDashboardCollection, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload } from './validation.js';
 
 const MAX_DOC_BYTES = 220 * 1024;
 const MAX_RESULTS = 100;
