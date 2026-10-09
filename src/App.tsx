@@ -5,7 +5,7 @@ import {
   LoaderCircle, LockKeyhole, LogOut, Mail, MessageSquareText, MoreHorizontal, Pencil,
   Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Users, WandSparkles, X
 } from 'lucide-react';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, reload, sendEmailVerification, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
 import { auth, firebaseConfigured } from './firebase';
 
 type CollectionName = 'messages' | 'projects' | 'settings' | 'websites' | 'n8n_projects' | 'n8n_project_forms' | 'prompts';
@@ -291,6 +291,34 @@ export default function App() {
     notify(`Exported ${exported.length} records.`);
   }
 
+  async function sendVerificationAgain() {
+    if (!user) return;
+    try {
+      await sendEmailVerification(user);
+      notify('Verification email sent. Open the newest email and click its verification link, then sign out and sign in again.');
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Could not send verification email.');
+    }
+  }
+
+  async function refreshVerificationStatus() {
+    if (!user) return;
+    try {
+      await reload(user);
+      const refreshed = auth.currentUser;
+      if (refreshed) setUser(refreshed);
+      if (refreshed?.emailVerified) {
+        notify('Email verified. Refreshing your secure data session…');
+        await refreshed.getIdToken(true);
+        await loadRecords(active, refreshed);
+      } else {
+        notify('Firebase still reports this email as unverified. Open the newest verification email link first.');
+      }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Could not refresh verification status.');
+    }
+  }
+
   async function signOutUser() { await signOut(auth); setRecords([]); setCounts({}); }
 
   if (authLoading) return <div className="boot-screen"><div className="brand-mark"><Database size={22}/></div><LoaderCircle className="spin" size={24}/><span>Securing your workspace…</span></div>;
@@ -316,6 +344,12 @@ export default function App() {
       <header className="topbar"><div className="breadcrumb"><span>Workspace</span><ArrowRight size={14}/><strong>{current.title}</strong></div><div className="top-actions"><span className={apiStatus === 'ok' ? 'system-status' : 'system-status off'}><span className="status-dot"/>{apiStatus === 'ok' ? 'API connected' : apiStatus === 'checking' ? 'Checking API' : 'API needs setup'}</span><div className="user-pill"><div className="avatar">{(user.email || 'A').slice(0,1).toUpperCase()}</div><div><strong>{user.email}</strong><small>Administrator</small></div></div><button className="icon-btn" onClick={signOutUser} title="Sign out"><LogOut size={17}/></button></div></header>
 
       <section className="page-content">
+        {user && !user.emailVerified && <div className="notice warn" style={{ marginBottom: 18, padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <CircleAlert size={20} />
+          <div style={{ flex: 1 }}><strong>Email verification is still pending</strong><div>Firebase has not marked this signed-in account as verified. Send a fresh verification email, open its newest link, then check the status here.</div></div>
+          <button className="secondary" onClick={() => void sendVerificationAgain()}><Mail size={15}/> Send email</button>
+          <button className="secondary" onClick={() => void refreshVerificationStatus()}><RefreshCw size={15}/> Check again</button>
+        </div>}
         <div className="welcome-row"><div><div className="eyebrow"><span className="gold-line"/> BUSINESS DATA MANAGEMENT</div><h1>{active === 'messages' ? <>Good systems. <em>Clear insights.</em></> : current.title}</h1><p>{active === 'messages' ? 'A secure, single place to view and manage the records powering your business.' : current.subtitle}</p></div><div className="welcome-ornament"><div className="ornament-ring"/><Database size={27}/><span> BQ / DATA</span></div></div>
         <div className="stat-grid">
           <div className="stat-card"><div className="stat-top"><span>Total loaded records</span><Boxes size={17}/></div><strong>{dashboardCounts.total}</strong><small>Across collections visited this session</small></div>
