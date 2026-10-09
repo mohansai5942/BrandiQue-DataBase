@@ -428,6 +428,42 @@ export default function App() {
     notify(`Exported ${exported.length} records.`);
   }
 
+  async function exportAllData() {
+    if (!user || busy) return;
+    setBusy(true);
+    try {
+      const backup = await apiRequest<Record<string, unknown>>(user, '/api/backup');
+      downloadFile(`brandique-firestore-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 2), 'application/json');
+      const collections = backup.collections as Record<string, { count?: number }> | undefined;
+      const total = Object.values(collections || {}).reduce((sum, item) => sum + Number(item?.count || 0), 0);
+      notify(`Full backup exported: ${total} documents across all collections.`);
+    } catch (e) { notify(e instanceof Error ? e.message : 'Full export failed.'); }
+    finally { setBusy(false); }
+  }
+
+  async function importAllData(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !user || busy) return;
+    if (file.size > 50 * 1024 * 1024) { notify('Choose a JSON backup file smaller than 50 MB.'); return; }
+    setBusy(true);
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      if (!isRecordPayload(parsed) || parsed.format !== 'brandique-firestore-export' || parsed.formatVersion !== 1 || !isRecordPayload(parsed.collections)) {
+        throw new Error('Invalid backup. Select the full JSON file exported by BrandiQue Admin.');
+      }
+      const collectionEntries = Object.entries(parsed.collections);
+      const total = collectionEntries.reduce((sum, [, value]) => sum + (isRecordPayload(value) && Array.isArray(value.documents) ? value.documents.length : 0), 0);
+      if (!total) throw new Error('The backup contains no documents to import.');
+      const summary = collectionEntries.map(([name, value]) => `${name}: ${isRecordPayload(value) && Array.isArray(value.documents) ? value.documents.length : 0}`).join('\n');
+      if (!window.confirm(`Import ${total} documents into the Firebase database connected to data.brandique.in?\n\n${summary}\n\nDocuments with matching IDs will be OVERWRITTEN. Other existing documents will remain. Nothing will be permanently deleted. Continue only if this is the intended target database.`)) return;
+      const result = await apiRequest<{ importedDocuments: number }>(user, '/api/backup', { method: 'POST', body: JSON.stringify(parsed) });
+      notify(`Import complete: ${result.importedDocuments} documents written with their original IDs.`);
+      await loadRecords(active, user);
+    } catch (e) { notify(e instanceof Error ? e.message : 'Import failed.'); }
+    finally { setBusy(false); }
+  }
+
   async function sendVerificationAgain() {
     if (!user) return;
     try {
@@ -497,7 +533,7 @@ export default function App() {
 
         <section className="data-panel">
           <div className="panel-heading"><div><div className="eyebrow">COLLECTION / {String(SECTIONS.findIndex(s => s.id === active) + 1).padStart(2,'0')}</div><h2>{current.title}</h2><p>{current.subtitle} <span className="separator">·</span> Showing up to 100 records</p></div><div className="panel-heading-actions"><button className="secondary" onClick={() => void loadRecords(active)} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''}/> Refresh</button><button className="primary" onClick={() => setEditor('new')}><Plus size={16}/> Add record</button></div></div>
-          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${current.title.toLowerCase()}…`}/>{search && <button className="clear-search" onClick={() => setSearch('')}><X size={14}/></button>}</div><div className="toolbar-right">{active === 'messages' && <div className="message-view-switch"><button className={messageView === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('all')}>All ({records.filter(item => !item.isDeleted).length})</button><button className={messageView === 'contact' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('contact')}>Contact</button><button className={messageView === 'service' ? 'filter-chip selected' : 'filter-chip'} onClick={() => { setMessageView('service'); setServiceCategory('all'); }}>Services</button><button className={messageView === 'legacy' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('legacy')}>Legacy</button></div>}{active === 'messages' && messageView === 'service' && <select aria-label="Filter service category" className="service-category-select" value={serviceCategory} onChange={event => setServiceCategory(event.target.value)}><option value="all">All services ({serviceCategories.length})</option>{serviceCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>}<button className={showDeleted ? 'filter-chip selected' : 'filter-chip'} onClick={() => setShowDeleted(!showDeleted)}><Trash2 size={14}/>{showDeleted ? 'Recycle bin' : 'Active records'}</button><button className="export-button" onClick={() => exportRecords('json')}><FileJson2 size={15}/> JSON</button><button className="export-button" onClick={() => exportRecords('csv')}><ArrowDownToLine size={15}/> CSV</button></div></div>
+          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${current.title.toLowerCase()}…`}/>{search && <button className="clear-search" onClick={() => setSearch('')}><X size={14}/></button>}</div><div className="toolbar-right">{active === 'messages' && <div className="message-view-switch"><button className={messageView === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('all')}>All ({records.filter(item => !item.isDeleted).length})</button><button className={messageView === 'contact' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('contact')}>Contact</button><button className={messageView === 'service' ? 'filter-chip selected' : 'filter-chip'} onClick={() => { setMessageView('service'); setServiceCategory('all'); }}>Services</button><button className={messageView === 'legacy' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('legacy')}>Legacy</button></div>}{active === 'messages' && messageView === 'service' && <select aria-label="Filter service category" className="service-category-select" value={serviceCategory} onChange={event => setServiceCategory(event.target.value)}><option value="all">All services ({serviceCategories.length})</option>{serviceCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>}<button className={showDeleted ? 'filter-chip selected' : 'filter-chip'} onClick={() => setShowDeleted(!showDeleted)}><Trash2 size={14}/>{showDeleted ? 'Recycle bin' : 'Active records'}</button><button className="export-button" onClick={() => void exportAllData()} disabled={busy}><FileJson2 size={15}/> Export All Data</button><button className="export-button" onClick={() => document.getElementById('brandique-backup-import')?.click()} disabled={busy}><Upload size={15}/> Import Data</button><input id="brandique-backup-import" type="file" accept="application/json,.json" hidden onChange={event => void importAllData(event)}/><button className="export-button" onClick={() => exportRecords('json')} disabled={busy}><FileJson2 size={15}/> JSON</button><button className="export-button" onClick={() => exportRecords('csv')} disabled={busy}><ArrowDownToLine size={15}/> CSV</button></div></div>
 
           {loading ? <div className="empty-state"><LoaderCircle className="spin" size={28}/><strong>Loading records</strong><span>Securely requesting Firestore data…</span></div> :
           apiStatus === 'error' && !records.length ? <div className="empty-state"><CircleAlert size={28}/><strong>API setup required</strong><span>Check the Vercel server logs and required environment variables.</span><button className="secondary" onClick={() => void loadRecords(active)}><RefreshCw size={15}/> Try again</button></div> :
