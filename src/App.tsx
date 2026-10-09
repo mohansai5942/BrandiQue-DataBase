@@ -144,6 +144,7 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
         parsed = { ...fields };
         for (const [key, text] of Object.entries(complexDraft)) {
           const current = fields[key];
+          if (Array.isArray(current) && current.every(item => typeof item === 'string')) continue;
           if (typeof current === 'object' && current !== null) parsed[key] = JSON.parse(text);
         }
       }
