@@ -1,13 +1,22 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { authorizeAdminToken } from './admin-auth.js';
 import { getCorsHeaders, getErrorMessage, getErrorStatus, isRecordPayload } from './security.js';
 import { isDashboardCollection, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload } from './validation.js';
 
 const MAX_DOC_BYTES = 220 * 1024;
 const MAX_RESULTS = 100;
+const BACKUP_COLLECTIONS = ['messages', 'projects', 'settings', 'websites', 'n8n_projects', 'n8n_project_forms', 'prompts'] as const;
+const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
+function restoreBackupTimestamps(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(restoreBackupTimestamps);
+  if (!isRecordPayload(value)) return value;
+  if (value.type === 'firestore/timestamp/1.0' && typeof value.seconds === 'number') return new Timestamp(value.seconds, typeof value.nanoseconds === 'number' ? value.nanoseconds : 0);
+  if (typeof value._seconds === 'number' && typeof value._nanoseconds === 'number' && Object.keys(value).every(key => key === '_seconds' || key === '_nanoseconds')) return new Timestamp(value._seconds, value._nanoseconds);
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, restoreBackupTimestamps(child)]));
+}
 type VercelRequest = IncomingMessage & {
   query: Record<string, string | string[] | undefined>;
   body?: unknown;
@@ -79,6 +88,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const db = getFirestore(getApp());
 
     if (route !== 'data') return sendError(res, 404, 'Endpoint not found.');
+    if (route === 'backup') {
+      if (req.method === 'GET') {
+        const collectionName = readQuery(req.query.collection);
+        if (!BACKUP_COLLECTIONS.includes(collectionName as typeof BACKUP_COLLECTIONS[number])) return sendError(res, 400, 'Unsupported collection.');
+        const after = readQuery(req.query.after);
+        let query = db.collection(collectionName).orderBy(FieldPath.documentId()).limit(5);
+        if (after) query = query.startAfter(after);
+        const snapshot = await query.get();
+        const documents = snapshot.docs.map(document => ({ id: document.id, data: document.data() as Record<string, unknown> }));
+        const nextCursor = snapshot.size === 5 ? snapshot.docs[snapshot.docs.length - 1]?.id || null : null;
+        return res.status(200).json({ ok: true, collection: collectionName, documents, nextCursor, done: nextCursor === null });
+      }
+      if (req.method === 'POST') {
+        const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {});
+        if (Buffer.byteLength(rawBody, 'utf8') > MAX_BACKUP_BYTES) return sendError(res, 413, 'Import request is larger than the 50 MB limit.');
+        const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        if (!isRecordPayload(body) || body.format !== 'brandique-firestore-export' || body.formatVersion !== 1 || !isRecordPayload(body.collections)) return sendError(res, 400, 'Invalid BrandiQue JSON backup.');
+        const entries: Array<{ collection: string; id: string; data: Record<string, unknown> }> = [];
+        for (const [name, value] of Object.entries(body.collections)) {
+          if (!BACKUP_COLLECTIONS.includes(name as typeof BACKUP_COLLECTIONS[number])) return sendError(res, 400, `Unsupported backup collection: ${name}`);
+          if (!isRecordPayload(value) || !Array.isArray(value.documents)) return sendError(res, 400, `Invalid document list for ${name}.`);
+          for (const document of value.documents) {
+            if (!isRecordPayload(document) || typeof document.id !== 'string' || !document.id.trim() || document.id.includes('/') || !isRecordPayload(document.data)) return sendError(res, 400, `Invalid document in ${name}; no writes were started.`);
+            entries.push({ collection: name, id: document.id, data: document.data });
+          }
+        }
+        let written = 0;
+        for (let start = 0; start < entries.length; start += 100) {
+          const batch = db.batch();
+          for (const entry of entries.slice(start, start + 100)) batch.set(db.collection(entry.collection).doc(entry.id), restoreBackupTimestamps(entry.data) as Record<string, unknown>);
+          await batch.commit();
+          written += Math.min(100, entries.length - start);
+        }
+        return res.status(200).json({ ok: true, importedDocuments: written });
+      }
+      res.setHeader('Allow', 'GET, POST, OPTIONS');
+      return sendError(res, 405, 'Method not allowed for backup endpoint.');
+    }
+
     const collectionName = readQuery(req.query.collection);
     if (!isDashboardCollection(collectionName)) return sendError(res, 400, 'Collection is not available through this dashboard.');
     const collection = collectionName;
