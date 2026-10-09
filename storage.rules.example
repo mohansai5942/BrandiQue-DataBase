@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedInAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in ['REPLACE_WITH_EXACT_ADMIN_EMAIL'];
+    }
+
+    // Portfolio media is public content; uploads remain limited to a verified admin.
+    // Replace the placeholder with each exact address from the server-side ADMIN_EMAILS allowlist.
+    match /dashboard/projects/{fileName} {
+      allow read: if true;
+      allow write: if signedInAdmin()
+        && request.resource.size <= 25 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*'));
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

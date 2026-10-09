@@ -1,19 +1,21 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { authorizeAdminToken } from './admin-auth';
+import { getCorsHeaders, getErrorMessage, getErrorStatus, isRecordPayload } from './security';
+import { isDashboardCollection, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload } from './validation';
 
-const ALLOWED_COLLECTIONS = new Set([
-  'messages',
-  'projects',
-  'settings',
-  'websites',
-  'n8n_projects',
-  'n8n_project_forms',
-  'prompts'
-]);
 const MAX_DOC_BYTES = 220 * 1024;
 const MAX_RESULTS = 100;
+type VercelRequest = IncomingMessage & {
+  query: Record<string, string | string[] | undefined>;
+  body?: unknown;
+};
+type VercelResponse = ServerResponse & {
+  status(code: number): VercelResponse;
+  json(body: unknown): VercelResponse;
+};
 
 function getApp() {
   if (getApps().length) return getApps()[0];
@@ -29,41 +31,12 @@ function getApp() {
   return initializeApp({ credential: applicationDefault(), projectId: process.env.FIREBASE_PROJECT_ID || 'brandique-web-solutions' });
 }
 
-function normalizeOrigin(value: string): string {
-  try {
-    const parsed = new URL(value.trim());
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
-    return parsed.origin.toLowerCase();
-  } catch {
-    return '';
-  }
-}
-
 function cors(req: VercelRequest, res: VercelResponse) {
-  const origin = typeof req.headers.origin === 'string' ? normalizeOrigin(req.headers.origin) : '';
-  const configured = [
-    process.env.DASHBOARD_ORIGIN || '',
-    ...(process.env.ALLOWED_ORIGINS || '').split(',')
-  ].map((value) => normalizeOrigin(value)).filter(Boolean);
-
-  // Explicit production domains plus this dashboard's own Vercel deployment aliases.
-  // Do not allow arbitrary *.vercel.app origins.
-  const hostname = origin ? new URL(origin).hostname : '';
-  const isDashboardVercelAlias =
-    hostname === 'brandi-que-data-base.vercel.app' ||
-    (hostname.startsWith('brandi-que-data-base-') && hostname.endsWith('-mohansai5942s-projects.vercel.app')) ||
-    (hostname.startsWith('brandi-que-data-base-git-') && hostname.endsWith('-mohansai5942s-projects.vercel.app'));
-  const isAllowed = !origin || configured.includes(origin) ||
-    origin === 'https://data.brandique.in' || isDashboardVercelAlias;
-
-  if (origin && isAllowed) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Max-Age', '600');
-  }
-  return isAllowed;
+  const originHeader = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+  const headers = getCorsHeaders(originHeader, process.env);
+  if (!headers) return false;
+  for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
+  return true;
 }
 function sendError(res: VercelResponse, status: number, message: string) {
   return res.status(status).json({ ok: false, error: message });
@@ -74,22 +47,7 @@ function readQuery(value: string | string[] | undefined): string {
 }
 
 async function requireAdmin(req: VercelRequest) {
-  const authHeader = req.headers.authorization || '';
-  const match = /^Bearer\s+(.+)$/i.exec(authHeader);
-  if (!match) throw Object.assign(new Error('Sign-in required.'), { statusCode: 401 });
-  const firebaseAuth = getAuth(getApp());
-  const decoded = await firebaseAuth.verifyIdToken(match[1], true);
-  // Read current account state from Firebase Auth rather than relying only on a potentially stale ID-token claim.
-  const account = await firebaseAuth.getUser(decoded.uid);
-  const email = (account.email || decoded.email || '').toLowerCase().trim();
-  const allowedEmails = (process.env.ADMIN_EMAILS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
-  if (!email || !allowedEmails.includes(email)) {
-    throw Object.assign(new Error('Admin email is not present in the Production ADMIN_EMAILS allowlist. Check spelling and redeploy.'), { statusCode: 403 });
-  }
-  if (account.emailVerified !== true) {
-    throw Object.assign(new Error('Firebase reports this email as unverified. Verify this user in Firebase Authentication, then sign out and sign in again.'), { statusCode: 403 });
-  }
-  return { uid: decoded.uid, email };
+  return authorizeAdminToken(req.headers.authorization, getAuth(getApp()), process.env.ADMIN_EMAILS);
 }
 
 function safeDocId(value: string) {
@@ -122,7 +80,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (route !== 'data') return sendError(res, 404, 'Endpoint not found.');
     const collectionName = readQuery(req.query.collection);
-    if (!ALLOWED_COLLECTIONS.has(collectionName)) return sendError(res, 400, 'Collection is not available through this dashboard.');
+    if (!isDashboardCollection(collectionName)) return sendError(res, 400, 'Collection is not available through this dashboard.');
+    const collection = collectionName;
     const collectionRef = db.collection(collectionName);
     const id = readQuery(req.query.id);
 
@@ -140,11 +99,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'POST') {
       const data = req.body;
-      if (!data || typeof data !== 'object' || Array.isArray(data)) return sendError(res, 400, 'Body must be a JSON object.');
-      const payload = { ...data };
-      delete payload.id;
-      payload.updatedAt = new Date().toISOString();
-      payload.createdAt = payload.createdAt || new Date().toISOString();
+      if (!isRecordPayload(data)) return sendError(res, 400, 'Body must be a JSON object.');
+      const validationError = validateRecordPayload(collection, data, 'create');
+      if (validationError) return sendError(res, 400, validationError);
+      const payload = prepareCreateRecord(data);
       if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_DOC_BYTES) return sendError(res, 413, 'Record is too large. Store images/files in file storage and save URLs here.');
       const requestedId = collectionName === 'settings' && typeof data.id === 'string' ? safeDocId(data.id) : '';
       const ref = requestedId ? collectionRef.doc(requestedId) : collectionRef.doc();
@@ -155,10 +113,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'PATCH' && id) {
       const data = req.body;
-      if (!data || typeof data !== 'object' || Array.isArray(data)) return sendError(res, 400, 'Body must be a JSON object.');
-      const payload = { ...data };
-      delete payload.id;
-      payload.updatedAt = new Date().toISOString();
+      if (!isRecordPayload(data)) return sendError(res, 400, 'Body must be a JSON object.');
+      const validationError = validateRecordPayload(collection, data, 'update');
+      if (validationError) return sendError(res, 400, validationError);
+      const payload = prepareUpdateRecord(data);
       if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_DOC_BYTES) return sendError(res, 413, 'Record is too large. Store images/files in file storage and save URLs here.');
       const ref = collectionRef.doc(safeDocId(id));
       const existing = await ref.get();
@@ -172,16 +130,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const ref = collectionRef.doc(safeDocId(id));
       const existing = await ref.get();
       if (!existing.exists) return sendError(res, 404, 'Record not found.');
-      await ref.set({ isDeleted: true, deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true });
+      await ref.set(prepareSoftDelete(), { merge: true });
       return res.status(200).json({ ok: true, deleted: true, mode: 'soft-delete' });
     }
 
     res.setHeader('Allow', 'GET, POST, PATCH, DELETE, OPTIONS');
     return sendError(res, 405, 'Method not allowed for this endpoint.');
-  } catch (error: any) {
-    const status = Number(error?.statusCode) || 500;
-    if (status === 401 || status === 403 || status === 400) return sendError(res, status, error.message || 'Request rejected.');
-    console.error('BrandiQue Data API error:', error?.message || error);
+  } catch (error: unknown) {
+    const status = getErrorStatus(error);
+    if (status === 401 || status === 403 || status === 400) return sendError(res, status, getErrorMessage(error) || 'Request rejected.');
+    console.error('BrandiQue Data API error:', getErrorMessage(error));
     return sendError(res, 500, 'Server error. Check deployment environment variables and server logs.');
   }
 }

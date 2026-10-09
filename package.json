@@ -7,11 +7,12 @@
     "dev": "vite",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
     "firebase": "^13.0.0",
-    "firebase-admin": "^13.10.0",
+    "firebase-admin": "^14.5.0",
     "lucide-react": "^1.54.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -20,12 +21,19 @@
     "@types/node": "^22.15.30",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
-    "@vercel/node": "^23.0.0",
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
   },
   "engines": {
     "node": "24.x"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6"
+  },
+  "allowScripts": {
+    "esbuild@0.27.0": true,
+    "@firebase/util@1.15.3": true,
+    "protobufjs@7.6.6": true
   }
 }
