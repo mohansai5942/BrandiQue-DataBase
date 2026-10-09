@@ -183,7 +183,14 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
               return <label className="editor-field wide-field" key={key}><span>{label}</span><textarea value={currentText} spellCheck={false} onChange={e => setComplexDraft(old => ({ ...old, [key]: e.target.value }))} rows={Math.min(8, Math.max(3, currentText.split('\n').length))}/><small>Enter a valid JSON object.</small></label>;
             }
             if (isLongText || stringValue.length > 100) return <label className="editor-field wide-field" key={key}><span>{label}</span><textarea value={stringValue} onChange={e => updateField(key, e.target.value)} rows={key.toLowerCase().includes('workflowjson') ? 8 : 3} spellCheck={false}/></label>;
-            const inputType = key.toLowerCase().includes('email') ? 'email' : (key.toLowerCase().includes('url') || key.toLowerCase().endsWith('link') || key.toLowerCase().includes('image') || key.toLowerCase().includes('video')) ? 'text' : (typeof value === 'number' ? 'number' : 'text');
+            const lowerKey = key.toLowerCase();
+            const inputType = lowerKey.includes('email') ? 'email' : (lowerKey.includes('url') || lowerKey.endsWith('link') || lowerKey.includes('image') || lowerKey.includes('video') || lowerKey.includes('instagram') || lowerKey.includes('whatsapp')) ? 'text' : (typeof value === 'number' ? 'number' : 'text');
+            const options = key === 'type' && section.id === 'projects'
+              ? [{ value: 'main', label: 'Main Project' }, { value: 'portfolio', label: 'Portfolio Project' }, { value: 'figma', label: 'Figma Project' }, { value: 'client', label: 'Client Project' }]
+              : key === 'source' && section.id === 'messages'
+                ? [{ value: 'contact', label: 'Contact Form' }, { value: 'service', label: 'Service Enquiry' }]
+                : null;
+            if (options) return <label className="editor-field" key={key}><span>{label}</span><select value={stringValue} onChange={e => updateField(key, e.target.value)}>{options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
             return <label className="editor-field" key={key}><span>{label}</span><input type={inputType} value={stringValue} onChange={e => updateField(key, typeof value === 'number' ? Number(e.target.value) : e.target.value)} spellCheck={false}/></label>;
           })}
           <div className="form-tip"><FileJson2 size={15}/><span>Need a custom field? Use <strong>Advanced JSON</strong> to add or edit any field in this record.</span></div>
@@ -238,8 +245,10 @@ export default function App() {
   const visible = useMemo(() => records.filter(record => {
     if (!showDeleted && record.isDeleted === true) return false;
     if (showDeleted && record.isDeleted !== true) return false;
-    if (active === 'messages' && messageView === 'contact' && record.source === 'service') return false;
-    if (active === 'messages' && messageView === 'service' && record.source !== 'service') return false;
+    const serviceKeywords = ['full-stack', 'full stack', 'react', 'next.js', 'web development', 'wordpress', 'wp', 'branding', 'identity', 'logo', 'digital marketing', 'marketing', 'social', 'ai automation', 'ai', 'agent', 'automation', 'n8n', 'bot'];
+    const isServiceEnquiry = record.source === 'service' || (record.serviceDetails && Object.keys(record.serviceDetails as Record<string, unknown>).length > 0) || serviceKeywords.some(keyword => String(record.service || '').toLowerCase().includes(keyword));
+    if (active === 'messages' && messageView === 'contact' && isServiceEnquiry) return false;
+    if (active === 'messages' && messageView === 'service' && !isServiceEnquiry) return false;
     const q = search.toLowerCase().trim();
     return !q || JSON.stringify(record).toLowerCase().includes(q);
   }), [records, search, showDeleted, active, messageView]);
