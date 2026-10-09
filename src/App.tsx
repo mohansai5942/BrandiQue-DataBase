@@ -457,10 +457,21 @@ export default function App() {
       if (!total) throw new Error('The backup contains no documents to import.');
       const summary = collectionEntries.map(([name, value]) => `${name}: ${isRecordPayload(value) && Array.isArray(value.documents) ? value.documents.length : 0}`).join('\n');
       if (!window.confirm(`Import ${total} documents into the Firebase database connected to data.brandique.in?\n\n${summary}\n\nDocuments with matching IDs will be OVERWRITTEN. Other existing documents will remain. Nothing will be permanently deleted. Continue only if this is the intended target database.`)) return;
-      const result = await apiRequest<{ importedDocuments: number }>(user, '/api/backup', { method: 'POST', body: JSON.stringify(parsed) });
-      notify(`Import complete: ${result.importedDocuments} documents written with their original IDs.`);
+      let imported = 0;
+      // Small sequential requests stay below typical serverless request-body limits.
+      for (const [name, value] of collectionEntries) {
+        if (!isRecordPayload(value) || !Array.isArray(value.documents)) continue;
+        const docs = value.documents;
+        for (let offset = 0; offset < docs.length; offset += 25) {
+          const chunk = docs.slice(offset, offset + 25);
+          const partial = { ...parsed, collections: { [name]: { count: chunk.length, documents: chunk } } };
+          const result = await apiRequest<{ importedDocuments: number }>(user, '/api/backup', { method: 'POST', body: JSON.stringify(partial) });
+          imported += result.importedDocuments;
+        }
+      }
+      notify(`Import complete: ${imported} documents written with their original IDs.`);
       await loadRecords(active, user);
-    } catch (e) { notify(e instanceof Error ? e.message : 'Import failed.'); }
+    } catch (e) { notify(e instanceof Error ? `Import stopped: ${e.message}. Earlier batches may already have been written; review the database before retrying.` : 'Import failed. Review the database before retrying.'); }
     finally { setBusy(false); }
   }
 
