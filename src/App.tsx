@@ -12,21 +12,21 @@ type CollectionName = 'messages' | 'projects' | 'settings' | 'websites' | 'n8n_p
 type RecordValue = Record<string, unknown> & { id: string };
 type Section = { id: CollectionName; title: string; subtitle: string; icon: typeof Database; noun: string };
 const SECTIONS: Section[] = [
-  { id: 'messages', title: 'Leads & enquiries', subtitle: 'Website contact and service enquiries', icon: MessageSquareText, noun: 'lead' },
-  { id: 'projects', title: 'Projects', subtitle: 'Portfolio entries shown on BrandiQue', icon: BriefcaseBusiness, noun: 'project' },
-  { id: 'websites', title: 'Websites', subtitle: 'Connected products and website links', icon: Globe2, noun: 'website' },
-  { id: 'settings', title: 'Site settings', subtitle: 'Contact details and public website settings', icon: Settings2, noun: 'setting' },
-  { id: 'n8n_projects', title: 'AI automations', subtitle: 'n8n projects and workflow metadata', icon: WandSparkles, noun: 'automation' },
-  { id: 'n8n_project_forms', title: 'Automation enquiries', subtitle: 'Client enquiries for automation services', icon: Users, noun: 'enquiry' },
+  { id: 'messages', title: 'Contact Form', subtitle: 'Contact leads and service enquiries from the original BrandiQue Admin Panel', icon: MessageSquareText, noun: 'lead' },
+  { id: 'projects', title: 'Projects', subtitle: 'Main, portfolio, Figma and client projects — matching the original Admin Panel', icon: BriefcaseBusiness, noun: 'project' },
+  { id: 'websites', title: 'Our Websites', subtitle: 'Website name, URL, description, logo and recycle status', icon: Globe2, noun: 'website' },
+  { id: 'settings', title: 'Site Settings', subtitle: 'Public contact details, social links, working hours and admin avatar', icon: Settings2, noun: 'setting' },
+  { id: 'n8n_projects', title: 'AI Automations', subtitle: 'Workflow projects, tags, node count, JSON and client-request settings', icon: WandSparkles, noun: 'automation' },
+  { id: 'n8n_project_forms', title: 'Automation Enquiries', subtitle: 'Client requests submitted for individual automation projects', icon: Users, noun: 'enquiry' },
   { id: 'prompts', title: 'Prompts', subtitle: 'Prompt records in the Firestore project', icon: FileText, noun: 'prompt' },
 ];
 const STARTER: Record<CollectionName, Record<string, unknown>> = {
-  messages: { source: 'contact', name: '', email: '', service: 'Web Development', budget: '', message: '', createdAt: new Date().toISOString() },
-  projects: { title: '', category: 'Web Development', desc: '', tags: [], image: '', images: [], video: '', videos: [], link: '', type: 'main', createdAt: new Date().toISOString(), isDeleted: false },
-  websites: { name: '', url: 'https://', description: '', logoUrl: '', createdAt: new Date().toISOString() },
-  settings: { id: 'contact', email: '', phone: '', location: '', instagram: '', whatsapp: '', workingHours: '' },
-  n8n_projects: { title: '', category: 'AI & Automation', desc: '', tags: [], workflowJson: '{\n  "nodes": [],\n  "connections": {}\n}', nodeCount: 0, allowClientRequest: true, createdAt: new Date().toISOString() },
-  n8n_project_forms: { projectId: '', projectTitle: '', name: '', email: '', phone: '', message: '', createdAt: new Date().toISOString() },
+  messages: { source: 'contact', name: '', email: '', phone: '', service: '', budget: '', message: '', serviceDetails: {}, isDeleted: false, createdAt: new Date().toISOString() }, 
+  projects: { title: '', category: '', desc: '', tags: [], image: '', images: [], video: '', videos: [], link: '', type: 'main', isDeleted: false, createdAt: new Date().toISOString() }, 
+  websites: { name: '', url: 'https://', description: '', logoUrl: '', isDeleted: false, createdAt: new Date().toISOString() }, 
+  settings: { id: 'contact', email: 'brandiquewebsolutions@gmail.com', phone: '+91 70933 20572', location: 'Visakhapatnam, India', instagram: 'https://www.instagram.com/brandiquewebsolutions/', whatsapp: 'https://wa.me/917093320572', workingHours: 'Mon - Sat: 9:00 AM - 8:00 PM IST', adminAvatarUrl: '' }, 
+  n8n_projects: { title: '', category: '', desc: '', tags: [], workflowJson: '{\n  "nodes": [],\n  "connections": {}\n}', nodeCount: 0, testWorkflowUrl: '', allowClientRequest: true, isDeleted: false, createdAt: new Date().toISOString() }, 
+  n8n_project_forms: { projectId: '', projectTitle: '', name: '', email: '', phone: '', message: '', isDeleted: false, createdAt: new Date().toISOString() }, 
   prompts: { title: '', category: '', prompt: '', createdAt: new Date().toISOString() },
 };
 
@@ -204,6 +204,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
+  const [messageView, setMessageView] = useState<'all' | 'contact' | 'service'>('all');
   const [editor, setEditor] = useState<RecordValue | null | 'new'>(null);
   const [toast, setToast] = useState('');
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
@@ -237,9 +238,11 @@ export default function App() {
   const visible = useMemo(() => records.filter(record => {
     if (!showDeleted && record.isDeleted === true) return false;
     if (showDeleted && record.isDeleted !== true) return false;
+    if (active === 'messages' && messageView === 'contact' && record.source === 'service') return false;
+    if (active === 'messages' && messageView === 'service' && record.source !== 'service') return false;
     const q = search.toLowerCase().trim();
     return !q || JSON.stringify(record).toLowerCase().includes(q);
-  }), [records, search, showDeleted]);
+  }), [records, search, showDeleted, active, messageView]);
 
   const dashboardCounts = useMemo(() => ({
     total: Object.values(counts).reduce((total, value) => total + (value || 0), 0),
@@ -360,7 +363,7 @@ export default function App() {
 
         <section className="data-panel">
           <div className="panel-heading"><div><div className="eyebrow">COLLECTION / {String(SECTIONS.findIndex(s => s.id === active) + 1).padStart(2,'0')}</div><h2>{current.title}</h2><p>{current.subtitle} <span className="separator">·</span> Showing up to 100 records</p></div><div className="panel-heading-actions"><button className="secondary" onClick={() => void loadRecords(active)} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''}/> Refresh</button><button className="primary" onClick={() => setEditor('new')}><Plus size={16}/> Add record</button></div></div>
-          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${current.title.toLowerCase()}…`}/>{search && <button className="clear-search" onClick={() => setSearch('')}><X size={14}/></button>}</div><div className="toolbar-right"><button className={showDeleted ? 'filter-chip selected' : 'filter-chip'} onClick={() => setShowDeleted(!showDeleted)}><Trash2 size={14}/>{showDeleted ? 'Recycle bin' : 'Active records'}</button><button className="export-button" onClick={() => exportRecords('json')}><FileJson2 size={15}/> JSON</button><button className="export-button" onClick={() => exportRecords('csv')}><ArrowDownToLine size={15}/> CSV</button></div></div>
+          <div className="toolbar"><div className="searchbox"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${current.title.toLowerCase()}…`}/>{search && <button className="clear-search" onClick={() => setSearch('')}><X size={14}/></button>}</div><div className="toolbar-right">{active === 'messages' && <div className="message-view-switch"><button className={messageView === 'all' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('all')}>All</button><button className={messageView === 'contact' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('contact')}>Contact Form</button><button className={messageView === 'service' ? 'filter-chip selected' : 'filter-chip'} onClick={() => setMessageView('service')}>Service Enquiries</button></div>}<button className={showDeleted ? 'filter-chip selected' : 'filter-chip'} onClick={() => setShowDeleted(!showDeleted)}><Trash2 size={14}/>{showDeleted ? 'Recycle bin' : 'Active records'}</button><button className="export-button" onClick={() => exportRecords('json')}><FileJson2 size={15}/> JSON</button><button className="export-button" onClick={() => exportRecords('csv')}><ArrowDownToLine size={15}/> CSV</button></div></div>
 
           {loading ? <div className="empty-state"><LoaderCircle className="spin" size={28}/><strong>Loading records</strong><span>Securely requesting Firestore data…</span></div> :
           apiStatus === 'error' && !records.length ? <div className="empty-state"><CircleAlert size={28}/><strong>API setup required</strong><span>Check the Vercel server logs and required environment variables.</span><button className="secondary" onClick={() => void loadRecords(active)}><RefreshCw size={15}/> Try again</button></div> :
