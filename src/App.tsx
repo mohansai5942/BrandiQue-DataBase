@@ -137,7 +137,10 @@ export default function App() {
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const current = SECTIONS.find(s => s.id === active)!;
 
-  useEffect(() => onAuthStateChanged(auth, next => { setUser(next); setAuthLoading(false); }), []);
+  useEffect(() => {
+    if (!firebaseConfigured || !auth) { setAuthLoading(false); return; }
+    return onAuthStateChanged(auth, next => { setUser(next); setAuthLoading(false); });
+  }, []);
   const notify = useCallback((message: string) => { setToast(message); window.setTimeout(() => setToast(''), 3600); }, []);
 
   const loadRecords = useCallback(async (collectionName: CollectionName, who = user) => {
