@@ -159,7 +159,7 @@ export default function App() {
   useEffect(() => { if (user) void loadRecords(active, user); }, [user, active, loadRecords]);
   useEffect(() => {
     if (!user) return;
-    apiRequest<{ ok: boolean }>(user, '/api/health').then(() => setApiStatus('ok')).catch(() => setApiStatus('error'));
+    apiRequest<{ ok: boolean; projectConfigured: boolean; adminAllowlistConfigured: boolean }>(user, '/api/health').then((status) => setApiStatus(status.projectConfigured && status.adminAllowlistConfigured ? 'ok' : 'error')).catch(() => setApiStatus('error'));
   }, [user]);
 
   const visible = useMemo(() => records.filter(record => {
