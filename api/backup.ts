@@ -1,11 +1,11 @@
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getCorsHeaders, isRecordPayload } from './security';
 
 const COLLECTIONS = ['messages', 'projects', 'settings', 'websites', 'n8n_projects', 'n8n_project_forms', 'prompts'] as const;
 const MAX_BODY_BYTES = 50 * 1024 * 1024;
-type RequestLike = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown };
+type RequestLike = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown; query?: Record<string, string | string[] | undefined> };
 type ResponseLike = { status(code: number): ResponseLike; json(value: unknown): unknown; end(): unknown; setHeader(name: string, value: string): void };
 function getAdminApp() {
   if (getApps().length) return getApps()[0]!;
@@ -50,12 +50,21 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     if (!allowed.length || !allowed.includes(decoded.email.toLowerCase())) return sendError(res, 403, 'This account is not on the administrator allowlist.');
     const db = getFirestore(app);
     if (req.method === 'GET') {
-      const collections: Record<string, { count: number; documents: Array<{ id: string; data: Record<string, unknown> }> }> = {};
-      for (const name of COLLECTIONS) {
-        const snapshot = await db.collection(name).get();
-        collections[name] = { count: snapshot.size, documents: snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() as Record<string, unknown> })) };
+      const rawCollection = req.query?.collection;
+      const collectionName = Array.isArray(rawCollection) ? rawCollection[0] : rawCollection;
+      if (collectionName) {
+        if (!COLLECTIONS.includes(collectionName as typeof COLLECTIONS[number])) return sendError(res, 400, 'Unsupported collection.');
+        const rawAfter = req.query?.after;
+        const after = Array.isArray(rawAfter) ? rawAfter[0] : rawAfter;
+        const pageSize = 5;
+        let query = db.collection(collectionName).orderBy(FieldPath.documentId()).limit(pageSize);
+        if (after) query = query.startAfter(after);
+        const snapshot = await query.get();
+        const documents = snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() as Record<string, unknown> }));
+        const nextCursor = snapshot.size === pageSize ? snapshot.docs[snapshot.docs.length - 1]?.id || null : null;
+        return res.status(200).json({ ok: true, collection: collectionName, documents, nextCursor, done: nextCursor === null });
       }
-      return res.status(200).json({ ok: true, format: 'brandique-firestore-export', formatVersion: 1, exportedAt: new Date().toISOString(), projectId: process.env.FIREBASE_PROJECT_ID || 'brandique-web-solutions', collections });
+      return sendError(res, 400, 'Specify a collection to export in pages.');
     }
     const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {});
     if (Buffer.byteLength(rawBody, 'utf8') > MAX_BODY_BYTES) return sendError(res, 413, 'Import file is larger than the 50 MB limit.');
