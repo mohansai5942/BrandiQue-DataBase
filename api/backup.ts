@@ -20,7 +20,14 @@ function getAdminApp() {
 function sendError(res: ResponseLike, status: number, message: string) {
   return res.status(status).json({ ok: false, error: message });
 }
-function restoreTimestamps(value: unknown): unknown {\n  if (Array.isArray(value)) return value.map(restoreTimestamps);\n  if (!isRecordPayload(value)) return value;\n  if (value.type === 'firestore/timestamp/1.0' && typeof value.seconds === 'number') return new Timestamp(value.seconds, typeof value.nanoseconds === 'number' ? value.nanoseconds : 0);\n  if (typeof value._seconds === 'number' && typeof value._nanoseconds === 'number' && Object.keys(value).every(key => key === '_seconds' || key === '_nanoseconds')) return new Timestamp(value._seconds, value._nanoseconds);\n  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, restoreTimestamps(child)]));\n}\nexport default async function handler(req: RequestLike, res: ResponseLike) {
+function restoreTimestamps(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(restoreTimestamps);
+  if (!isRecordPayload(value)) return value;
+  if (value.type === 'firestore/timestamp/1.0' && typeof value.seconds === 'number') return new Timestamp(value.seconds, typeof value.nanoseconds === 'number' ? value.nanoseconds : 0);
+  if (typeof value._seconds === 'number' && typeof value._nanoseconds === 'number' && Object.keys(value).every(key => key === '_seconds' || key === '_nanoseconds')) return new Timestamp(value._seconds, value._nanoseconds);
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, restoreTimestamps(child)]));
+}
+export default async function handler(req: RequestLike, res: ResponseLike) {
   const originHeader = Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin;\n  const cors = getCorsHeaders(originHeader, process.env);
   if (!cors) return sendError(res, 403, 'Origin is not allowed.');
   Object.entries(cors).forEach(([key, value]) => res.setHeader(key, value));
