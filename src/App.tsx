@@ -432,11 +432,24 @@ export default function App() {
     if (!user || busy) return;
     setBusy(true);
     try {
-      const backup = await apiRequest<Record<string, unknown>>(user, '/api/backup');
+      const collections: Record<string, { count: number; documents: Array<{ id: string; data: Record<string, unknown> }> }> = {};
+      for (const section of SECTIONS) {
+        const documents: Array<{ id: string; data: Record<string, unknown> }> = [];
+        let cursor = '';
+        for (;;) {
+          const query = new URLSearchParams({ collection: section.id });
+          if (cursor) query.set('after', cursor);
+          const page = await apiRequest<{ documents: Array<{ id: string; data: Record<string, unknown> }>; nextCursor: string | null }>(user, `/api/backup?${query.toString()}`);
+          documents.push(...(page.documents || []));
+          if (!page.nextCursor) break;
+          cursor = page.nextCursor;
+        }
+        collections[section.id] = { count: documents.length, documents };
+      }
+      const backup = { ok: true, format: 'brandique-firestore-export', formatVersion: 1, exportedAt: new Date().toISOString(), projectId: 'brandique-web-solutions', collections };
       downloadFile(`brandique-firestore-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 2), 'application/json');
-      const collections = backup.collections as Record<string, { count?: number }> | undefined;
-      const total = Object.values(collections || {}).reduce((sum, item) => sum + Number(item?.count || 0), 0);
-      notify(`Full backup exported: ${total} documents across all collections.`);
+      const total = Object.values(collections).reduce((sum, item) => sum + item.count, 0);
+      notify(`Full backup exported: ${total} documents across ${SECTIONS.length} collections.`);
     } catch (e) { notify(e instanceof Error ? e.message : 'Full export failed.'); }
     finally { setBusy(false); }
   }
