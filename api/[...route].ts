@@ -75,7 +75,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!cors(req, res)) return sendError(res, 403, 'Origin not allowed.');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const route = Array.isArray(req.query.route) ? req.query.route.join('/') : String(req.query.route || '');
+  const queryRoute = Array.isArray(req.query.route) ? req.query.route.join('/') : String(req.query.route || '');
+  // Vercel catch-all routes can expose the wildcard differently across runtime/build versions.
+  // Fall back to the URL path so /api/health is recognized reliably.
+  const pathname = String(req.url || '').split('?')[0];
+  const pathRoute = pathname.startsWith('/api/') ? pathname.slice('/api/'.length).replace(/\/$/, '') : '';
+  const route = queryRoute || pathRoute;
   if (route === 'health' && req.method === 'GET') {
     return res.status(200).json({
       ok: true,
