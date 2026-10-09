@@ -50,7 +50,7 @@ function downloadFile(filename: string, content: string, type: string) {
 function safeFilename(value: string) { return value.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'records'; }
 
 async function apiRequest<T>(user: FirebaseUser, url: string, init?: RequestInit): Promise<T> {
-  const token = await user.getIdToken();
+  const token = await user.getIdToken(true);
   const response = await fetch(url, {
     ...init,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(init?.headers || {}) },
