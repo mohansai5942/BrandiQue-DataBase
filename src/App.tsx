@@ -196,8 +196,8 @@ export default function App() {
     if (!user) return;
     setBusy(true);
     try {
-      const value = { ...record, isDeleted: false, deletedAt: null };
-      delete value.id;
+      const { id: _recordId, ...recordFields } = record;
+      const value = { ...recordFields, isDeleted: false, deletedAt: null };
       await apiRequest(user, `/api/data?collection=${encodeURIComponent(active)}&id=${encodeURIComponent(record.id)}`, { method: 'PATCH', body: JSON.stringify(value) });
       notify('Record restored.'); await loadRecords(active, user);
     } catch (e) { notify(e instanceof Error ? e.message : 'Restore failed.'); }
