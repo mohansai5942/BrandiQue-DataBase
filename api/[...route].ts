@@ -29,22 +29,42 @@ function getApp() {
   return initializeApp({ credential: applicationDefault(), projectId: process.env.FIREBASE_PROJECT_ID || 'brandique-web-solutions' });
 }
 
+function normalizeOrigin(value: string): string {
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '';
+    return parsed.origin.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 function cors(req: VercelRequest, res: VercelResponse) {
-  const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-  const allowed = [
+  const origin = typeof req.headers.origin === 'string' ? normalizeOrigin(req.headers.origin) : '';
+  const configured = [
     process.env.DASHBOARD_ORIGIN || '',
-    ...(process.env.ALLOWED_ORIGINS || '').split(',').map((x) => x.trim())
-  ].filter(Boolean);
-  if (origin && allowed.includes(origin)) {
+    ...(process.env.ALLOWED_ORIGINS || '').split(',')
+  ].map((value) => normalizeOrigin(value)).filter(Boolean);
+
+  // Explicit production domains plus this dashboard's own Vercel deployment aliases.
+  // Do not allow arbitrary *.vercel.app origins.
+  const hostname = origin ? new URL(origin).hostname : '';
+  const isDashboardVercelAlias =
+    hostname === 'brandi-que-data-base.vercel.app' ||
+    (hostname.startsWith('brandi-que-data-base-') && hostname.endsWith('-mohansai5942s-projects.vercel.app')) ||
+    (hostname.startsWith('brandi-que-data-base-git-') && hostname.endsWith('-mohansai5942s-projects.vercel.app'));
+  const isAllowed = !origin || configured.includes(origin) ||
+    origin === 'https://data.brandique.in' || isDashboardVercelAlias;
+
+  if (origin && isAllowed) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Max-Age', '600');
   }
-  return !origin || allowed.includes(origin);
+  return isAllowed;
 }
-
 function sendError(res: VercelResponse, status: number, message: string) {
   return res.status(status).json({ ok: false, error: message });
 }
