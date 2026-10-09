@@ -475,8 +475,8 @@ export default function App() {
       for (const [name, value] of collectionEntries) {
         if (!isRecordPayload(value) || !Array.isArray(value.documents)) continue;
         const docs = value.documents;
-        for (let offset = 0; offset < docs.length; offset += 25) {
-          const chunk = docs.slice(offset, offset + 25);
+        for (let offset = 0; offset < docs.length; offset += 3) {
+          const chunk = docs.slice(offset, offset + 3);
           const partial = { ...parsed, collections: { [name]: { count: chunk.length, documents: chunk } } };
           const result = await apiRequest<{ importedDocuments: number }>(user, '/api/backup', { method: 'POST', body: JSON.stringify(partial) });
           imported += result.importedDocuments;
