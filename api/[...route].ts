@@ -20,13 +20,13 @@ function getApp() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (raw) {
     const serviceAccount = JSON.parse(raw);
-    if (serviceAccount.project_id !== process.env.VITE_FIREBASE_PROJECT_ID && process.env.VITE_FIREBASE_PROJECT_ID) {
+    if (serviceAccount.project_id !== process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PROJECT_ID) {
       throw new Error('Service account project mismatch.');
     }
     return initializeApp({ credential: cert(serviceAccount), projectId: serviceAccount.project_id });
   }
   // Useful for Vercel deployments using an explicitly configured Google runtime identity.
-  return initializeApp({ credential: applicationDefault(), projectId: process.env.VITE_FIREBASE_PROJECT_ID || 'brandique-web-solutions' });
+  return initializeApp({ credential: applicationDefault(), projectId: process.env.FIREBASE_PROJECT_ID || 'brandique-web-solutions' });
 }
 
 function cors(req: VercelRequest, res: VercelResponse) {
