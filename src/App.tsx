@@ -101,21 +101,92 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
   const seed: Record<string, unknown> = initial
     ? Object.fromEntries(Object.entries(initial).filter(([key]) => key !== 'id'))
     : { ...STARTER[section.id] };
+  const [fields, setFields] = useState<Record<string, unknown>>(seed);
   const [raw, setRaw] = useState(JSON.stringify(seed, null, 2));
+  const [complexDraft, setComplexDraft] = useState<Record<string, string>>({});
+  const [mode, setMode] = useState<'fields' | 'json'>('fields');
   const [error, setError] = useState('');
-  function submit(event: FormEvent) {
-    event.preventDefault(); setError('');
+
+  function updateField(key: string, value: unknown) {
+    const next = { ...fields, [key]: value };
+    setFields(next);
+    setRaw(JSON.stringify(next, null, 2));
+    setError('');
+  }
+
+  function switchMode(next: 'fields' | 'json') {
+    if (next === 'json') {
+      setRaw(JSON.stringify(fields, null, 2));
+      setMode('json');
+      setError('');
+      return;
+    }
     try {
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Record must be a JSON object.');
-      void onSave(parsed, initial?.id);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Invalid JSON.'); }
+      setFields(parsed);
+      setComplexDraft({});
+      setMode('fields');
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Fix invalid JSON before switching to form view.');
+    }
   }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    setError('');
+    try {
+      let parsed: Record<string, unknown>;
+      if (mode === 'json') {
+        parsed = JSON.parse(raw);
+      } else {
+        parsed = { ...fields };
+        for (const [key, text] of Object.entries(complexDraft)) {
+          const current = fields[key];
+          if (typeof current === 'object' && current !== null) parsed[key] = JSON.parse(text);
+        }
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Record must be a JSON object.');
+      if (typeof parsed.workflowJson === 'string' && parsed.workflowJson.trim()) {
+        try { JSON.parse(parsed.workflowJson); } catch { throw new Error('Workflow JSON must contain valid JSON syntax.'); }
+      }
+      void onSave(parsed, initial?.id);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Please correct the record before saving.'); }
+  }
+
+  const entries = Object.entries(fields).filter(([key]) => key !== 'id');
   return <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <form className="editor-modal" onSubmit={submit}>
-      <div className="modal-head"><div><div className="eyebrow">{initial ? 'EDIT EXISTING RECORD' : 'CREATE RECORD'}</div><h2>{initial ? 'Update record' : `New ${section.noun}`}</h2><p>Structured JSON editor · Validate before saving</p></div><button type="button" className="icon-btn" onClick={onClose} aria-label="Close editor"><X size={19}/></button></div>
+      <div className="modal-head"><div><div className="eyebrow">{initial ? 'EDIT EXISTING RECORD' : 'CREATE RECORD'}</div><h2>{initial ? 'Update record' : `New ${section.noun}`}</h2><p>Validated changes · Saved to the configured Firestore project</p></div><button type="button" className="icon-btn" onClick={onClose} aria-label="Close editor"><X size={19}/></button></div>
       <div className="editor-warning"><ShieldCheck size={17}/><span>Changes are written to the configured Firestore project. The public site reflects them only after its integration is pointed to this same project/API.</span></div>
-      <textarea className="json-editor" spellCheck={false} value={raw} onChange={e => setRaw(e.target.value)} aria-label="Record JSON"/>
+      <div className="editor-tabs"><button type="button" onClick={() => switchMode('fields')} className={mode === 'fields' ? 'editor-tab active' : 'editor-tab'}><Settings2 size={14}/> Form fields</button><button type="button" onClick={() => switchMode('json')} className={mode === 'json' ? 'editor-tab active' : 'editor-tab'}><FileJson2 size={14}/> Advanced JSON</button><span>{mode === 'fields' ? `${entries.length} fields` : 'Raw record payload'}</span></div>
+      {mode === 'json' ? <textarea className="json-editor" spellCheck={false} value={raw} onChange={e => setRaw(e.target.value)} aria-label="Record JSON"/> :
+        <div className="field-editor-grid">
+          {entries.map(([key, value]) => {
+            const label = titleFromKey(key);
+            const stringValue = value === null || value === undefined ? '' : String(value);
+            const isLongText = /message|description|^desc$|prompt|workflowjson/i.test(key);
+            if (typeof value === 'boolean') return <label className="editor-field toggle-field" key={key}><span><strong>{label}</strong><small>Boolean value</small></span><input type="checkbox" checked={value} onChange={e => updateField(key, e.target.checked)}/></label>;
+            if (Array.isArray(value)) {
+              const simpleStrings = value.every(item => typeof item === 'string');
+              const currentText = complexDraft[key] ?? (simpleStrings ? (key.toLowerCase().includes('tag') ? value.join(', ') : value.join('\n')) : JSON.stringify(value, null, 2));
+              return <label className="editor-field wide-field" key={key}><span>{label}</span><textarea value={currentText} spellCheck={false} onChange={e => {
+                const text = e.target.value;
+                setComplexDraft(old => ({ ...old, [key]: text }));
+                if (simpleStrings) updateField(key, key.toLowerCase().includes('tag') ? text.split(',').map(item => item.trim()).filter(Boolean) : text.split(/\r?\n/).map(item => item.trim()).filter(Boolean));
+              }} placeholder={simpleStrings ? (key.toLowerCase().includes('tag') ? 'Separate items with commas' : 'One item per line') : 'Valid JSON array'} rows={Math.min(6, Math.max(2, currentText.split('\n').length))}/><small>{simpleStrings ? (key.toLowerCase().includes('tag') ? 'Separate tags with commas.' : 'Use one URL or item per line.') : 'Array/object field: enter valid JSON.'}</small></label>;
+            }
+            if (typeof value === 'object' && value !== null) {
+              const currentText = complexDraft[key] ?? JSON.stringify(value, null, 2);
+              return <label className="editor-field wide-field" key={key}><span>{label}</span><textarea value={currentText} spellCheck={false} onChange={e => setComplexDraft(old => ({ ...old, [key]: e.target.value }))} rows={Math.min(8, Math.max(3, currentText.split('\n').length))}/><small>Enter a valid JSON object.</small></label>;
+            }
+            if (isLongText || stringValue.length > 100) return <label className="editor-field wide-field" key={key}><span>{label}</span><textarea value={stringValue} onChange={e => updateField(key, e.target.value)} rows={key.toLowerCase().includes('workflowjson') ? 8 : 3} spellCheck={false}/></label>;
+            const inputType = key.toLowerCase().includes('email') ? 'email' : (key.toLowerCase().includes('url') || key.toLowerCase().endsWith('link') || key.toLowerCase().includes('image') || key.toLowerCase().includes('video')) ? 'text' : (typeof value === 'number' ? 'number' : 'text');
+            return <label className="editor-field" key={key}><span>{label}</span><input type={inputType} value={stringValue} onChange={e => updateField(key, typeof value === 'number' ? Number(e.target.value) : e.target.value)} spellCheck={false}/></label>;
+          })}
+          <div className="form-tip"><FileJson2 size={15}/><span>Need a custom field? Use <strong>Advanced JSON</strong> to add or edit any field in this record.</span></div>
+        </div>}
       {error && <div className="notice error">{error}</div>}
       <div className="modal-foot"><span className="subtle">{initial ? `Document ID: ${initial.id}` : `Collection: ${section.id}`}</span><div className="actions"><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="submit" className="primary" disabled={busy}>{busy ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Save record</button></div></div>
     </form>
