@@ -28,7 +28,8 @@ function restoreTimestamps(value: unknown): unknown {
   return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, restoreTimestamps(child)]));
 }
 export default async function handler(req: RequestLike, res: ResponseLike) {
-  const originHeader = Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin;\n  const cors = getCorsHeaders(originHeader, process.env);
+  const originHeader = Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin;
+  const cors = getCorsHeaders(originHeader, process.env);
   if (!cors) return sendError(res, 403, 'Origin is not allowed.');
   Object.entries(cors).forEach(([key, value]) => res.setHeader(key, value));
   res.setHeader('Cache-Control', 'no-store');
@@ -38,7 +39,8 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     return sendError(res, 405, 'Method not allowed.');
   }
   try {
-    const authorization = req.headers.authorization || '';
+    const authorizationHeader = req.headers.authorization;
+    const authorization = Array.isArray(authorizationHeader) ? authorizationHeader[0] || '' : authorizationHeader || '';
     const match = /^Bearer\s+(.+)$/i.exec(authorization);
     if (!match) return sendError(res, 401, 'Sign in as an approved administrator first.');
     const app = getAdminApp();
