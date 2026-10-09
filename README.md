@@ -41,6 +41,7 @@ Client config (these are Firebase web-app config fields; they are not server cre
 
 Server-only:
 
+- `FIREBASE_PROJECT_ID=brandique-web-solutions`
 - `FIREBASE_SERVICE_ACCOUNT_JSON` — paste the **entire JSON contents** of a service account created for the **new** Firebase project. Store this as a Vercel secret/environment variable only. Never commit it, place it in a VITE variable, or paste it into chat. Prefer a dedicated service account with only required Firestore data access; do not reuse the Firebase Admin SDK service-agent identity.
 - `ADMIN_EMAILS` — comma-separated exact email addresses permitted to sign in, e.g. `your-admin@example.com`. Use the account's actual email and ensure Firebase Auth email verification is complete.
 - `DASHBOARD_ORIGIN` — exact deployed dashboard origin, e.g. `https://your-project.vercel.app` during staging, then `https://data.brandique.in`.
