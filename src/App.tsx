@@ -462,9 +462,9 @@ export default function App() {
 
   async function permanentlyDeleteAllData() {
     if (!user || busy) return;
-    const warning = 'PERMANENTLY DELETE ALL DATA in the dashboard collections? This cannot be undone. All documents and nested subcollections in messages, projects, settings, websites, n8n_projects, n8n_project_forms, and prompts will be permanently deleted. This does not delete Firebase Authentication users or Storage files.';
+    const warning = 'PERMANENTLY DELETE ALL DATA in this Firestore database? This cannot be undone. Every top-level Firestore collection and all nested subcollections will be permanently deleted, including collections not shown in this dashboard. This does not delete Firebase Authentication users or Storage files.';
     if (!window.confirm(warning)) return;
-    const confirmation = window.prompt('Final safety check: type DELETE ALL exactly to permanently erase the dashboard database collections.');
+    const confirmation = window.prompt('Final safety check: type DELETE ALL exactly to permanently erase every Firestore collection and nested subcollection.');
     if (confirmation !== 'DELETE ALL') {
       notify('Permanent deletion cancelled. No delete request was sent.');
       return;
