@@ -98,8 +98,9 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
   section: Section; initial: RecordValue | null; onClose: () => void;
   onSave: (value: Record<string, unknown>, existingId?: string) => Promise<void>; busy: boolean;
 }) {
-  const seed = initial ? { ...initial } : { ...STARTER[section.id] };
-  if (initial) delete seed.id;
+  const seed: Record<string, unknown> = initial
+    ? Object.fromEntries(Object.entries(initial).filter(([key]) => key !== 'id'))
+    : { ...STARTER[section.id] };
   const [raw, setRaw] = useState(JSON.stringify(seed, null, 2));
   const [error, setError] = useState('');
   function submit(event: FormEvent) {
