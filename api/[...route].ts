@@ -57,11 +57,17 @@ async function requireAdmin(req: VercelRequest) {
   const authHeader = req.headers.authorization || '';
   const match = /^Bearer\s+(.+)$/i.exec(authHeader);
   if (!match) throw Object.assign(new Error('Sign-in required.'), { statusCode: 401 });
-  const decoded = await getAuth(getApp()).verifyIdToken(match[1], true);
-  const email = (decoded.email || '').toLowerCase().trim();
+  const firebaseAuth = getAuth(getApp());
+  const decoded = await firebaseAuth.verifyIdToken(match[1], true);
+  // Read current account state from Firebase Auth rather than relying only on a potentially stale ID-token claim.
+  const account = await firebaseAuth.getUser(decoded.uid);
+  const email = (account.email || decoded.email || '').toLowerCase().trim();
   const allowedEmails = (process.env.ADMIN_EMAILS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
-  if (!email || !allowedEmails.includes(email) || decoded.email_verified !== true) {
-    throw Object.assign(new Error('This account is not an authorized, verified administrator.'), { statusCode: 403 });
+  if (!email || !allowedEmails.includes(email)) {
+    throw Object.assign(new Error('Admin email is not present in the Production ADMIN_EMAILS allowlist. Check spelling and redeploy.'), { statusCode: 403 });
+  }
+  if (account.emailVerified !== true) {
+    throw Object.assign(new Error('Firebase reports this email as unverified. Verify this user in Firebase Authentication, then sign out and sign in again.'), { statusCode: 403 });
   }
   return { uid: decoded.uid, email };
 }
