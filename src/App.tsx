@@ -208,7 +208,7 @@ export default function App() {
   }
 
   function exportRecords(format: 'json' | 'csv') {
-    const exported = visible.map(({ id, ...rest }) => ({ id, ...rest }));
+    const exported: Record<string, unknown>[] = visible.map(({ id, ...rest }) => ({ id, ...rest }));
     if (format === 'json') downloadFile(`brandique-${safeFilename(active)}.json`, JSON.stringify(exported, null, 2), 'application/json');
     else {
       const keys = Array.from(new Set(exported.flatMap(row => Object.keys(row))));
