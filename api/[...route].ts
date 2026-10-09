@@ -106,13 +106,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (isRecordPayload(body) && body.action === 'delete-all') {
           if (body.confirmation !== 'DELETE ALL') return sendError(res, 400, 'Permanent deletion confirmation is missing.');
           const deletedByCollection: Record<string, number> = {};
-          for (const name of BACKUP_COLLECTIONS) {
-            const ref = db.collection(name);
+          const collections = await db.listCollections();
+          for (const ref of collections) {
             const countSnapshot = await ref.count().get();
-            deletedByCollection[name] = countSnapshot.data().count;
+            deletedByCollection[ref.id] = countSnapshot.data().count;
             await db.recursiveDelete(ref);
           }
-          return res.status(200).json({ ok: true, permanentlyDeleted: true, deletedByCollection, message: 'All documents and nested subcollections in the dashboard collections were permanently deleted.' });
+          return res.status(200).json({ ok: true, permanentlyDeleted: true, deletedByCollection, message: 'All Firestore top-level collections and nested subcollections were permanently deleted.' });
         }
         if (!isRecordPayload(body) || body.format !== 'brandique-firestore-export' || body.formatVersion !== 1 || !isRecordPayload(body.collections)) return sendError(res, 400, 'Invalid BrandiQue JSON backup.');
         const entries: Array<{ collection: string; id: string; data: Record<string, unknown> }> = [];
