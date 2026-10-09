@@ -1,11 +1,12 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getCorsHeaders, isRecordPayload } from './security';
 
 const COLLECTIONS = ['messages', 'projects', 'settings', 'websites', 'n8n_projects', 'n8n_project_forms', 'prompts'] as const;
 const MAX_BODY_BYTES = 50 * 1024 * 1024;
+type RequestLike = { method?: string; headers: Record<string, string | string[] | undefined>; body?: unknown };
+type ResponseLike = { status(code: number): ResponseLike; json(value: unknown): unknown; end(): unknown; setHeader(name: string, value: string): void };
 function getAdminApp() {
   if (getApps().length) return getApps()[0]!;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
@@ -16,11 +17,11 @@ function getAdminApp() {
   }
   return initializeApp({ credential: applicationDefault(), projectId });
 }
-function sendError(res: VercelResponse, status: number, message: string) {
+function sendError(res: ResponseLike, status: number, message: string) {
   return res.status(status).json({ ok: false, error: message });
 }
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const cors = getCorsHeaders(req.headers.origin, process.env);
+function restoreTimestamps(value: unknown): unknown {\n  if (Array.isArray(value)) return value.map(restoreTimestamps);\n  if (!isRecordPayload(value)) return value;\n  if (value.type === 'firestore/timestamp/1.0' && typeof value.seconds === 'number') return new Timestamp(value.seconds, typeof value.nanoseconds === 'number' ? value.nanoseconds : 0);\n  if (typeof value._seconds === 'number' && typeof value._nanoseconds === 'number' && Object.keys(value).every(key => key === '_seconds' || key === '_nanoseconds')) return new Timestamp(value._seconds, value._nanoseconds);\n  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, restoreTimestamps(child)]));\n}\nexport default async function handler(req: RequestLike, res: ResponseLike) {
+  const originHeader = Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin;\n  const cors = getCorsHeaders(originHeader, process.env);
   if (!cors) return sendError(res, 403, 'Origin is not allowed.');
   Object.entries(cors).forEach(([key, value]) => res.setHeader(key, value));
   res.setHeader('Cache-Control', 'no-store');
@@ -69,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (let start = 0; start < entries.length; start += 400) {
       const batch = db.batch();
       for (const entry of entries.slice(start, start + 400)) {
-        batch.set(db.collection(entry.collection).doc(entry.id), entry.data);
+        batch.set(db.collection(entry.collection).doc(entry.id), restoreTimestamps(entry.data) as Record<string, unknown>);
       }
       await batch.commit();
       written += Math.min(400, entries.length - start);
