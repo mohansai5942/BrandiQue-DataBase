@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 
 const ALLOWED_COLLECTIONS = new Set([
   'messages',
@@ -97,14 +97,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET' && !id) {
       const snapshot = await collectionRef.limit(MAX_RESULTS).get();
-      const records = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+      const records = snapshot.docs.map((document) => ({ ...document.data(), id: document.id }));
       return res.status(200).json({ ok: true, records, limit: MAX_RESULTS, returned: records.length });
     }
 
     if (req.method === 'GET' && id) {
       const snapshot = await collectionRef.doc(safeDocId(id)).get();
       if (!snapshot.exists) return sendError(res, 404, 'Record not found.');
-      return res.status(200).json({ ok: true, record: { id: snapshot.id, ...snapshot.data() } });
+      return res.status(200).json({ ok: true, record: { ...snapshot.data(), id: snapshot.id } });
     }
 
     if (req.method === 'POST') {
@@ -115,7 +115,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       payload.updatedAt = new Date().toISOString();
       payload.createdAt = payload.createdAt || new Date().toISOString();
       if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_DOC_BYTES) return sendError(res, 413, 'Record is too large. Store images/files in file storage and save URLs here.');
-      const ref = await collectionRef.add(payload);
+      const requestedId = collectionName === 'settings' && typeof data.id === 'string' ? safeDocId(data.id) : '';
+      const ref = requestedId ? collectionRef.doc(requestedId) : collectionRef.doc();
+      if (requestedId && (await ref.get()).exists) return sendError(res, 409, 'A record with this ID already exists. Edit the existing record instead.');
+      await ref.set(payload);
       return res.status(201).json({ ok: true, record: { id: ref.id, ...payload } });
     }
 
