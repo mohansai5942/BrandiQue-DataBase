@@ -134,7 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!existing.exists) return sendError(res, 404, 'Record not found.');
       await ref.set(payload, { merge: true });
       const updated = await ref.get();
-      return res.status(200).json({ ok: true, record: { id: updated.id, ...updated.data() } });
+      return res.status(200).json({ ok: true, record: { ...updated.data(), id: updated.id } });
     }
 
     if (req.method === 'DELETE' && id) {
