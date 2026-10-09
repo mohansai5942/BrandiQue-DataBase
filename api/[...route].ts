@@ -87,7 +87,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const admin = await requireAdmin(req);
     const db = getFirestore(getApp());
 
-    if (route !== 'data') return sendError(res, 404, 'Endpoint not found.');
     if (route === 'backup') {
       if (req.method === 'GET') {
         const collectionName = readQuery(req.query.collection);
@@ -127,6 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return sendError(res, 405, 'Method not allowed for backup endpoint.');
     }
 
+    if (route !== 'data') return sendError(res, 404, 'Endpoint not found.');
     const collectionName = readQuery(req.query.collection);
     if (!isDashboardCollection(collectionName)) return sendError(res, 400, 'Collection is not available through this dashboard.');
     const collection = collectionName;
