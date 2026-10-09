@@ -58,8 +58,14 @@ async function apiRequest<T>(user: FirebaseUser, url: string, init?: RequestInit
     ...init,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(init?.headers || {}) },
   });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body.ok === false) throw new Error(body.error || `Request failed (${response.status})`);
+  const responseText = await response.text();
+  let body: Record<string, unknown> = {};
+  try { body = responseText ? JSON.parse(responseText) as Record<string, unknown> : {}; }
+  catch { body = {}; }
+  if (!response.ok || body.ok === false) {
+    const detail = typeof body.error === 'string' ? body.error : responseText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
+    throw new Error(detail || `Request failed (${response.status})`);
+  }
   return body as T;
 }
 
