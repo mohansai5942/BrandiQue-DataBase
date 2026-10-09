@@ -17,4 +17,4 @@ if (firebaseConfigured) {
   app = getApps().length ? getApp() : initializeApp(config);
   authInstance = getAuth(app);
 }
-export const auth = authInstance;
+export const auth = authInstance as Auth;
