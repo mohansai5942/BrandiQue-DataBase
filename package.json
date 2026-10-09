@@ -10,9 +10,9 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
-    "firebase": "^12.17.1",
-    "firebase-admin": "^13.5.0",
-    "lucide-react": "^0.468.0",
+    "firebase": "^13.0.0",
+    "firebase-admin": "^14.5.0",
+    "lucide-react": "^1.54.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -20,9 +20,12 @@
     "@types/node": "^22.15.30",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
-    "@vercel/node": "^5.3.0",
-    "@vitejs/plugin-react": "^4.5.0",
-    "typescript": "~5.8.3",
-    "vite": "^6.3.5"
+    "@vercel/node": "^23.0.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
