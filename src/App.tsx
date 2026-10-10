@@ -5,7 +5,7 @@ import {
   ExternalLink, Eye, Film, ImagePlus, LoaderCircle, LockKeyhole, LogOut, Mail, MessageSquareText, MoreHorizontal, Pencil,
   Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, Users, WandSparkles, X
 } from 'lucide-react';
-import { onAuthStateChanged, reload, sendEmailVerification, signInWithEmailAndPassword, signOut, User as FirebaseUser } from 'firebase/auth';
+import { EmailAuthProvider, onAuthStateChanged, reload, reauthenticateWithCredential, sendEmailVerification, signInWithEmailAndPassword, signOut, updateEmail, updatePassword, User as FirebaseUser } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, firebaseConfigured, storage } from './firebase';
 import { getMessageClassification, isRecordPayload } from '../api/security';
@@ -72,36 +72,122 @@ async function apiRequest<T>(user: FirebaseUser, url: string, init?: RequestInit
 function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  useEffect(() => {
+    try { setAvatarUrl(window.localStorage.getItem('brandique-admin-avatar') || ''); } catch { /* storage may be disabled */ }
+  }, []);
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(''); setBusy(true);
     try {
       if (!auth) throw new Error('Firebase Authentication is not configured.');
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch {
-      setError('Login failed. Check the email/password and confirm the account is enabled in Firebase Authentication.');
+      setError('Login failed. Check the Admin ID and password.');
     } finally { setBusy(false); }
   }
-  return <main className="login-shell">
+  return <main className="login-shell login-shell-premium">
     <div className="login-glow glow-one" /><div className="login-glow glow-two" />
-    <div className="login-card">
-      <div className="brand-lockup"><div className="brand-mark"><Database size={23} /></div><div><strong>BrandiQue<span> Data</span></strong><small>SECURE OPERATIONS CONSOLE</small></div></div>
-      <div className="login-emblem"><ShieldCheck size={27} /></div>
-      <p className="eyebrow">PRIVATE ADMIN ACCESS</p>
-      <h1>Data, under<br/><span>your control.</span></h1>
-      <p className="login-copy">Manage your business records in one protected workspace. Only verified, explicitly approved admin accounts can continue.</p>
-      {!firebaseConfigured && <div className="notice warn"><CircleAlert size={17}/> Firebase web configuration is missing. Add the VITE_FIREBASE_* variables in Vercel first.</div>}
+    <div className="login-card login-card-premium">
+      <div className="login-avatar-wrap">
+        {avatarUrl ? <img className="login-avatar" src={avatarUrl} alt="Admin profile"/> : <div className="login-avatar login-avatar-fallback"><Users size={42}/></div>}
+        <span className="login-avatar-badge"><Boxes size={15}/></span>
+      </div>
+      <h1 className="premium-login-title">ADMIN <span>LOGIN</span></h1>
+      <p className="premium-login-copy">Enter the admin ID &amp; password to access the dashboard.</p>
+      {!firebaseConfigured && <div className="notice warn"><CircleAlert size={17}/> Firebase configuration is missing. Check the Vercel environment variables.</div>}
       {error && <div className="notice error"><CircleAlert size={17}/>{error}</div>}
       <form onSubmit={submit} className="login-form">
-        <label>Email address<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@brandique.in"/></label>
-        <label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Your Firebase Auth password"/></label>
-        <button className="primary full" disabled={busy || !firebaseConfigured}>{busy ? <LoaderCircle className="spin" size={17}/> : <LockKeyhole size={17}/>} Sign in securely</button>
+        <label>ADMIN ID<div className="premium-input-wrap"><Users size={17}/><input type="text" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter Admin ID"/></div></label>
+        <label>PASSWORD<div className="premium-input-wrap"><LockKeyhole size={17}/><input type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter Password"/><button className="password-toggle" type="button" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'}><Eye size={17}/></button></div></label>
+        <button className="primary full premium-login-button" disabled={busy || !firebaseConfigured}>{busy ? <LoaderCircle className="spin" size={17}/> : <ShieldCheck size={17}/>} Access Dashboard <ArrowRight size={17}/></button>
       </form>
-      <div className="login-foot"><span><span className="status-dot"/> Protected session</span><span>Firebase Authentication</span></div>
+      <div className="login-foot premium-login-foot"><span><span className="status-dot"/> Protected session</span><span>Firebase Authentication</span></div>
     </div>
-    <div className="login-side"><span className="outline-index">BQ / 01</span><div className="side-quote">“Good systems make<br/>good work repeatable.”</div><div className="side-caption">BRANDIQUE WEB SOLUTIONS <span>·</span> DATA INFRASTRUCTURE</div></div>
   </main>;
+}
+
+
+function AdminSecurityModal({ user, avatarUrl, onAvatarSaved, onClose, notify }: {
+  user: FirebaseUser; avatarUrl: string; onAvatarSaved: (url: string) => void; onClose: () => void; notify: (message: string) => void;
+}) {
+  const [tab, setTab] = useState<'avatar' | 'id' | 'password'>('avatar');
+  const [imageUrl, setImageUrl] = useState(avatarUrl);
+  const [file, setFile] = useState<File | null>(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newId, setNewId] = useState(user.email || '');
+  const [newPassword, setNewPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function saveAvatar() {
+    if (!auth || !storage) { setError('Firebase Storage is not configured.'); return; }
+    setBusy(true); setError('');
+    try {
+      let url = imageUrl.trim();
+      if (file) {
+        if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) throw new Error('Choose a PNG, JPG or WEBP image under 2 MB.');
+        const destination = ref(storage, `dashboard/admin/avatar-${user.uid}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '-')}`);
+        const result = await uploadBytes(destination, file, { contentType: file.type });
+        url = await getDownloadURL(result.ref);
+      } else if (url) {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Enter a valid image URL.');
+      }
+      if (!url) throw new Error('Upload an image or enter an image URL.');
+      const token = await user.getIdToken(true);
+      const response = await fetch('/api/data?collection=settings', { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error('Could not load settings from Firestore.');
+      const data = await response.json() as { records?: RecordValue[] };
+      const existing = (data.records || []).find(item => item.id === 'contact' || item.id === 'admin-profile');
+      const payload = { ...(existing || {}), adminAvatarUrl: url, updatedAt: new Date().toISOString() };
+      delete (payload as Record<string, unknown>).id;
+      const write = await fetch(existing ? `/api/data?collection=settings&id=${encodeURIComponent(existing.id)}` : '/api/data?collection=settings', {
+        method: existing ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(existing ? payload : { ...payload, settingType: 'admin-profile' })
+      });
+      if (!write.ok) throw new Error('Avatar uploaded, but saving the Firestore setting failed.');
+      onAvatarSaved(url); notify('Admin avatar saved to Firebase.'); setFile(null);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not save avatar.'); }
+    finally { setBusy(false); }
+  }
+  async function updateCredentials(kind: 'id' | 'password') {
+    if (!auth || !user.email) return;
+    setBusy(true); setError('');
+    try {
+      if (!currentPassword) throw new Error('Enter your current password to confirm this change.');
+      const credential = EmailAuthProvider.credential(user.email, currentPassword);
+      await reauthenticateWithCredential(user, credential);
+      if (kind === 'id') {
+        if (!newId.trim() || newId.trim() === user.email) throw new Error('Enter a new Admin ID (email address).');
+        await updateEmail(user, newId.trim());
+        await sendEmailVerification(user);
+        notify('Admin ID updated. Verify the new email address to complete account security.');
+      } else {
+        if (newPassword.length < 8) throw new Error('Use a password with at least 8 characters.');
+        await updatePassword(user, newPassword);
+        notify('Password updated securely in Firebase Authentication.');
+      }
+      setCurrentPassword(''); setNewPassword('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Credential update failed.');
+    } finally { setBusy(false); }
+  }
+  return <div className="modal-backdrop security-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <section className="security-modal">
+      <header className="security-modal-head"><div className="security-modal-icon"><ShieldCheck size={24}/></div><div><h2>Admin Credentials &amp; Security</h2><p>Manage your login avatar, Admin ID and account password.</p></div><button className="icon-btn" onClick={onClose} aria-label="Close security settings"><X size={18}/></button></header>
+      <div className="security-tabs">
+        <button className={tab === 'avatar' ? 'active' : ''} onClick={() => setTab('avatar')}><ImagePlus size={15}/> Login Avatar Image</button>
+        <button className={tab === 'id' ? 'active' : ''} onClick={() => setTab('id')}><ShieldCheck size={15}/> Change Admin ID</button>
+        <button className={tab === 'password' ? 'active' : ''} onClick={() => setTab('password')}><LockKeyhole size={15}/> Change Password</button>
+      </div>
+      {error && <div className="notice error"><CircleAlert size={16}/>{error}</div>}
+      {tab === 'avatar' ? <div className="security-avatar-layout"><div className="security-avatar-controls"><label className="security-label">SELECT IMAGE METHOD</label><label className="security-file-drop"><Upload size={22}/><strong>{file ? file.name : 'Click to upload avatar image'}</strong><small>PNG, JPG or WEBP · Max 2 MB</small><input type="file" accept="image/png,image/jpeg,image/webp" onChange={e => setFile(e.target.files?.[0] || null)}/></label><label className="security-label">OR IMAGE URL</label><input className="security-input" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://example.com/avatar.jpg"/><div className="security-actions"><button className="secondary" onClick={() => { setFile(null); setImageUrl(''); }}><RefreshCw size={14}/> Reset</button><button className="primary" disabled={busy} onClick={() => void saveAvatar()}>{busy ? <LoaderCircle className="spin" size={15}/> : <Check size={15}/>} Update Avatar Image</button></div></div><div className="security-live-preview"><span>LIVE LOGIN SCREEN PREVIEW</span>{(file || imageUrl || avatarUrl) ? <img src={file ? URL.createObjectURL(file) : imageUrl || avatarUrl} alt="Avatar preview"/> : <div className="security-preview-placeholder"><Users size={36}/></div>}<strong>ADMIN <em>LOGIN</em></strong><small>Enter the admin ID &amp; Password to access the dashboard.</small></div></div>
+      : <div className="security-credential-form"><label className="security-label">CURRENT PASSWORD<input className="security-input" type="password" autoComplete="current-password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} placeholder="Confirm your current password" required/></label>{tab === 'id' ? <label className="security-label">NEW ADMIN ID / EMAIL<input className="security-input" type="email" autoComplete="username" value={newId} onChange={e => setNewId(e.target.value)} placeholder="new-admin@brandique.in" required/></label> : <label className="security-label">NEW PASSWORD<input className="security-input" type="password" autoComplete="new-password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="At least 8 characters" required minLength={8}/></label>}<button className="primary" disabled={busy} onClick={() => void updateCredentials(tab)}>{busy ? <LoaderCircle className="spin" size={15}/> : <ShieldCheck size={15}/>} Save {tab === 'id' ? 'Admin ID' : 'Password'}</button><p className="security-note">Credentials are updated in Firebase Authentication, never stored as plain text in Firestore.</p></div>}
+    </section>
+  </div>;
 }
 
 function RecordEditor({ section, initial, onClose, onSave, busy }: {
@@ -338,6 +424,8 @@ export default function App() {
   const [viewingProject, setViewingProject] = useState<RecordValue | null>(null);
   const [viewingWorkflow, setViewingWorkflow] = useState<RecordValue | null>(null);
   const [toast, setToast] = useState('');
+  const [showSecurity, setShowSecurity] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const current = SECTIONS.find(s => s.id === active)!;
 
@@ -563,6 +651,7 @@ export default function App() {
       })}
       <div className="sidebar-spacer"/>
       <div className="security-card"><div className="security-icon"><ShieldCheck size={17}/></div><div><strong>Protected workspace</strong><span>Firebase Auth + server checks</span></div><BadgeCheck size={17} className="verified"/></div>
+      <button className="nav-item security-settings-link" onClick={() => setShowSecurity(true)}><ShieldCheck size={17}/><span>Admin Credentials &amp; Security</span></button>
       <button className="nav-item logout" onClick={signOutUser}><LogOut size={17}/><span>Sign out</span></button>
       <div className="sidebar-bottom"><span className="status-dot"/><span>BrandiQue Web Solutions</span><span className="version">V1.0</span></div>
     </aside>
@@ -611,6 +700,7 @@ export default function App() {
     {editor && <RecordEditor key={typeof editor === 'string' ? `new-${active}` : editor.id} section={current} initial={editor === 'new' ? null : editor} onClose={() => setEditor(null)} onSave={saveRecord} busy={busy}/>}
     {viewingProject && <ProjectDetailDialog record={viewingProject} onClose={() => setViewingProject(null)}/>}
     {viewingWorkflow && <WorkflowDetailDialog record={viewingWorkflow} onClose={() => setViewingWorkflow(null)} onOpenEnquiries={() => { setViewingWorkflow(null); setActive('n8n_project_forms'); }}/>}
+    {showSecurity && user && <AdminSecurityModal user={user} avatarUrl={avatarUrl} onAvatarSaved={url => { setAvatarUrl(url); try { window.localStorage.setItem('brandique-admin-avatar', url); } catch { /* storage may be disabled */ } }} onClose={() => setShowSecurity(false)} notify={notify}/>}
     {toast && <div className="toast"><Check size={16}/>{toast}</div>}
   </div>;
 }
