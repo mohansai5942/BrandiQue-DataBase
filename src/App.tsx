@@ -498,6 +498,26 @@ export default function App() {
     finally { setBusy(false); }
   }
 
+  async function permanentlyDeleteRecord(record: RecordValue) {
+    if (!user || busy) return;
+    const label = getSummary(record);
+    if (!window.confirm(`Permanently delete “${label}” from the database? This cannot be undone.`)) return;
+    if (window.prompt(`Final confirmation: type DELETE to permanently remove “${label}”.`) !== 'DELETE') {
+      notify('Permanent deletion cancelled.'); return;
+    }
+    setBusy(true);
+    try {
+      await apiRequest(user, '/api/permanent-delete', {
+        method: 'POST',
+        body: JSON.stringify({ collection: active, id: record.id, confirmation: 'DELETE' })
+      });
+      notify('Record permanently deleted from the database.');
+      await loadRecords(active, user);
+    } catch (e) {
+      notify(e instanceof Error ? `Permanent delete failed: ${e.message}` : 'Permanent delete failed.');
+    } finally { setBusy(false); }
+  }
+
   async function restore(record: RecordValue) {
     if (!user) return;
     setBusy(true);
@@ -691,7 +711,7 @@ export default function App() {
             const summary = getSummary(record);
             const detail = String(record.email || record.category || record.service || record.url || record.desc || record.message || record.phone || '');
             const timestamp = pretty(record.updatedAt || record.createdAt || record.deletedAt);
-            return <tr key={record.id}><td><div className="record-name"><div className="record-avatar">{summary.trim().slice(0,1).toUpperCase() || 'R'}</div><div><strong>{summary}</strong><small>{record.id}</small></div></div></td><td><span className="record-preview">{detail.length > 70 ? detail.slice(0,70) + '…' : detail}</span></td><td><span className="timestamp">{timestamp}</span></td><td><span className={record.isDeleted ? 'state-pill deleted' : 'state-pill'}><span/>{record.isDeleted ? 'In recycle bin' : 'Active'}</span></td><td><div className="row-actions">{record.isDeleted ? <button className="table-action restore" onClick={() => void restore(record)} disabled={busy}><RefreshCw size={15}/> Restore</button> : <button className="table-action" onClick={() => setEditor(record)}><Pencil size={15}/> Edit</button>}{!record.isDeleted && <button className="table-action danger" onClick={() => void softDelete(record)} disabled={busy} title="Move to recycle bin"><Trash2 size={15}/></button>}</div></td></tr>;
+            return <tr key={record.id}><td><div className="record-name"><div className="record-avatar">{summary.trim().slice(0,1).toUpperCase() || 'R'}</div><div><strong>{summary}</strong><small>{record.id}</small></div></div></td><td><span className="record-preview">{detail.length > 70 ? detail.slice(0,70) + '…' : detail}</span></td><td><span className="timestamp">{timestamp}</span></td><td><span className={record.isDeleted ? 'state-pill deleted' : 'state-pill'}><span/>{record.isDeleted ? 'In recycle bin' : 'Active'}</span></td><td><div className="row-actions">{record.isDeleted ? <><button className="table-action restore" onClick={() => void restore(record)} disabled={busy}><RefreshCw size={15}/> Restore</button><button className="table-action danger permanent-delete-action" onClick={() => void permanentlyDeleteRecord(record)} disabled={busy} title="Permanently delete this record"><Trash2 size={15}/> Permanently delete</button></> : <button className="table-action" onClick={() => setEditor(record)}><Pencil size={15}/> Edit</button>}{!record.isDeleted && <button className="table-action danger" onClick={() => void softDelete(record)} disabled={busy} title="Move to recycle bin"><Trash2 size={15}/></button>}</div></td></tr>;
           })}</tbody></table><div className="table-foot"><span>Showing <strong>{visible.length}</strong> record{visible.length === 1 ? '' : 's'}</span><span><ShieldCheck size={14}/> Authenticated request · soft delete enabled</span></div></div>}
         </section>
         <footer className="page-footer"><span>© {new Date().getFullYear()} BrandiQue Web Solutions</span><span><LockKeyhole size={13}/> Private admin environment</span><span>Data is stored in your configured Firebase project</span></footer>
