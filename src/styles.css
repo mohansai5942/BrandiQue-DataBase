@@ -160,3 +160,6 @@ body{font-size:14px}
 .security-credential-form .security-label{margin:0}
 .security-note{font-size:11px;line-height:1.6;color:#8e95a5;margin:0}
 @media(max-width:700px){.login-card-premium{padding:30px 22px 24px}.login-avatar-wrap{width:112px;height:112px}.premium-login-title{font-size:27px!important}.security-modal{padding:20px 15px;border-radius:18px}.security-modal-head h2{font-size:15px}.security-tabs{grid-template-columns:1fr;gap:3px}.security-tabs button{justify-content:flex-start;padding:11px}.security-avatar-layout{grid-template-columns:1fr}.security-live-preview{min-height:190px}.security-actions button{flex:1}}
+
+.permanent-delete-action{color:#ff8999!important;border-color:rgba(255,90,120,.18)!important;background:rgba(255,65,95,.07)!important;white-space:nowrap}
+.permanent-delete-action:hover{background:rgba(255,65,95,.15)!important;border-color:rgba(255,90,120,.42)!important}
