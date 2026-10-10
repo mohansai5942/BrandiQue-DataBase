@@ -449,6 +449,36 @@ export default function App() {
   }, [user, notify]);
 
   useEffect(() => { if (user) void loadRecords(active, user); }, [user, active, loadRecords]);
+
+  // Populate every dashboard summary count immediately after login, without waiting
+  // for the admin to open each collection. These requests update counts only and
+  // never overwrite the currently visible collection records.
+  useEffect(() => {
+    if (!user) { setCounts({}); return; }
+    let cancelled = false;
+    const loadAllCounts = async () => {
+      const entries = await Promise.all(SECTIONS.map(async section => {
+        try {
+          const payload = await apiRequest<{ records?: RecordValue[]; returned?: number }>(
+            user, `/api/data?collection=${encodeURIComponent(section.id)}`
+          );
+          return [section.id, payload.returned ?? payload.records?.length ?? 0] as const;
+        } catch {
+          return [section.id, null] as const;
+        }
+      }));
+      if (cancelled) return;
+      setCounts(previous => {
+        const next = { ...previous };
+        for (const [collectionName, count] of entries) {
+          if (count !== null) next[collectionName] = count;
+        }
+        return next;
+      });
+    };
+    void loadAllCounts();
+    return () => { cancelled = true; };
+  }, [user]);
   useEffect(() => {
     if (!user) return;
     apiRequest<{ ok: boolean; projectConfigured: boolean; adminAllowlistConfigured: boolean }>(user, '/api/health').then((status) => setApiStatus(status.projectConfigured && status.adminAllowlistConfigured ? 'ok' : 'error')).catch(() => setApiStatus('error'));
