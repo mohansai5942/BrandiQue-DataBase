@@ -1,4 +1,3 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -18,7 +17,10 @@ function getAdminApp() {
   });
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+type RequestLike = { method?: string; headers: { authorization?: string }; body?: unknown };
+type ResponseLike = { setHeader(name: string, value: string): void; status(code: number): ResponseLike; json(value: unknown): unknown };
+
+export default async function handler(req: RequestLike, res: ResponseLike) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed.' });
   try {
