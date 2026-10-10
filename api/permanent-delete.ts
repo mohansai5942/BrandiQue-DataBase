@@ -33,7 +33,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     if (!decoded.email || decoded.email_verified !== true) {
       return res.status(403).json({ ok: false, error: 'A verified admin account is required.' });
     }
-    const allowlist = (process.env.ADMIN_EMAILS || process.env.ADMIN_ALLOWLIST || '')
+    const allowlist = (process.env.ADMIN_EMAILS || process.env.ADMIN_ALLOWLIST || process.env.ADMIN_EMAIL_ALLOWLIST || process.env.ADMIN_ALLOWED_EMAILS || '')
       .split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
     if (!allowlist.includes(decoded.email.toLowerCase())) {
       return res.status(403).json({ ok: false, error: 'This account is not authorized to permanently delete records.' });
