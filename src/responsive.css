@@ -1,0 +1,57 @@
+/* Theme polish + mobile layout (2026-10) */
+.editor-field select,.service-category-select{appearance:none;-webkit-appearance:none;width:100%;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#0b0c10 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23facc15' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;color:#e6e7df;padding:12px 34px 12px 13px;font-size:13px;color-scheme:dark}
+.editor-field select:focus{border-color:rgba(250,204,21,.45);outline:none}
+.editor-field select option{background:#111216;color:#e6e7df}
+.editor-field textarea{min-height:110px}
+.record-name small,.timestamp,.page-footer,.subtle,.table-foot,.form-tip{color:#9a9da8!important}
+.project-card-tags span,.preview-tags span{font-size:11px;color:#d0d2da}
+.preview-link{text-decoration:none}
+button:disabled.secondary,button:disabled.primary{opacity:.45;filter:grayscale(.4)}
+.lead-card{display:flex;flex-direction:column;height:100%}.lead-card-actions{margin-top:auto}
+.lead-directory{align-items:stretch}
+.project-card-actions,.lead-card-actions,.workflow-detail-actions{flex-wrap:wrap}
+.workflow-canvas-toolbar button{width:30px;height:28px}
+
+@media(max-width:760px){
+  html,body{overflow-x:hidden}
+  .sidebar{inset:auto 0 0 0;width:100%;height:auto;flex-direction:row;align-items:center;gap:2px;padding:6px 8px calc(6px + env(safe-area-inset-bottom));border-right:0;border-top:1px solid var(--line);overflow-x:auto;scrollbar-width:none;z-index:15;background:rgba(8,9,12,.97);backdrop-filter:blur(14px)}
+  .sidebar::-webkit-scrollbar{display:none}
+  .sidebar .brand-lockup,.sidebar-spacer,.sidebar-bottom,.security-card,.workspace-label,.nav-section-label{display:none!important}
+  .nav-item{flex:0 0 auto;width:auto;min-width:46px;height:46px;margin:0;padding:0 12px;justify-content:center;border-radius:12px}
+  .nav-item.logout{border-top:0;border-radius:12px;padding:0 12px}
+  .nav-item .nav-active-dot{display:none}
+  .main-area{width:100%;margin-left:0;padding-bottom:76px}
+  .topbar{height:58px;min-height:58px;padding:0 14px;gap:10px}
+  .topbar .breadcrumb{display:flex;font-size:13px;min-width:0}.topbar .breadcrumb>span,.topbar .breadcrumb>svg{display:none}
+  .topbar .breadcrumb strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .system-status{font-size:0;gap:0}.user-pill{border-left:0;padding-left:0}.user-pill>div:last-child{display:none}
+  .top-actions>.icon-btn{display:none}
+  .page-content{padding:18px 12px 14px}
+  .welcome-row h1{font-size:26px;letter-spacing:-.8px}.welcome-row p{font-size:13px}
+  .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .stat-card{padding:12px}.stat-card>strong{font-size:24px;margin:8px 0 3px}.stat-top{font-size:11px}
+  .panel-heading{padding:15px 14px}.panel-heading h2{font-size:19px}
+  .panel-heading-actions{display:grid;grid-template-columns:1fr 1fr;width:100%;gap:8px}.panel-heading-actions>*{width:100%}
+  .toolbar{padding:12px;gap:10px}.searchbox{width:100%;min-width:0}
+  .toolbar-right{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;width:calc(100% + 12px);margin-right:-12px;padding-right:12px;gap:6px}
+  .toolbar-right::-webkit-scrollbar,.project-category-tabs::-webkit-scrollbar,.workflow-category-tabs::-webkit-scrollbar{display:none}
+  .toolbar-right>*{flex:0 0 auto}.toolbar-divider{display:none}
+  .primary,.secondary,.export-button,.filter-chip{min-height:40px}
+  .workflow-category-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .workflow-category-tabs>*{flex:0 0 auto}
+  .record-table td{height:auto}
+  .lead-contact-grid{grid-template-columns:1fr}
+  .lead-details dl>div,.lead-extra dl>div{grid-template-columns:1fr;gap:3px}
+  .lead-card-actions>.subtle{max-width:100%;flex-basis:100%}
+  .project-card-actions .table-action,.lead-card-actions .table-action{min-height:38px}
+  .project-detail-videos{grid-template-columns:1fr}
+  .editor-modal,.project-detail-modal,.workflow-detail-modal,.security-modal{width:100%!important;max-height:calc(100dvh - 16px)}
+  .workflow-detail-modal{padding:0 12px 14px}
+  .modal-head h2{font-size:20px}
+  .editor-tabs{overflow-x:auto;scrollbar-width:none}
+  .security-modal{padding:18px 14px}
+  .toast{bottom:84px}
+  .page-footer{padding-bottom:6px}
+}
+@media(max-width:380px){.stat-grid{grid-template-columns:1fr 1fr}.stat-card>small{display:none}.nav-item{min-width:42px;padding:0 10px}}
+.message-view-switch{display:flex;gap:6px;flex:0 0 auto}
