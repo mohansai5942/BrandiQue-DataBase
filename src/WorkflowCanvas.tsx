@@ -73,7 +73,7 @@ export function WorkflowCanvas({ value, compact = false }: { value: unknown; com
     const fit = () => {
       const w = el.clientWidth - 12, h = el.clientHeight - 8;
       if (w <= 0 || h <= 0) return;
-      setFitZoom(Math.max(.3, Math.min(1, w / layout.width, h / layout.height)));
+      setFitZoom(Math.max(.18, Math.min(1, w / layout.width, h / layout.height)));
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -84,7 +84,7 @@ export function WorkflowCanvas({ value, compact = false }: { value: unknown; com
   const zoom = manualZoom ?? fitZoom;
   const setZoom = (fn: (value: number) => number) => setManualZoom(fn(zoom));
   return <div className={`workflow-canvas-frame${compact ? ' compact' : ''}`} style={{ height: frameHeight }}>
-    <div className="workflow-canvas-toolbar"><span>{layout.error ? 'Invalid workflow' : `${layout.nodes.length} nodes · ${layout.edges.length} connections`}</span><div><button type="button" aria-label="Zoom out" onClick={() => setZoom(value => Math.max(.3, value - .15))}><Minus size={13}/></button><button type="button" aria-label="Reset zoom" onClick={() => setManualZoom(null)}><Maximize2 size={13}/></button><button type="button" aria-label="Zoom in" onClick={() => setZoom(value => Math.min(1.7, value + .15))}><Plus size={13}/></button></div></div>
+    <div className="workflow-canvas-toolbar"><span>{layout.error ? 'Invalid workflow' : `${layout.nodes.length} nodes · ${layout.edges.length} connections`}</span><div><button type="button" aria-label="Zoom out" onClick={() => setZoom(value => Math.max(.18, value - .15))}><Minus size={13}/></button><button type="button" aria-label="Reset zoom" onClick={() => setManualZoom(null)}><Maximize2 size={13}/></button><button type="button" aria-label="Zoom in" onClick={() => setZoom(value => Math.min(1.7, value + .15))}><Plus size={13}/></button></div></div>
     {layout.error ? <div className="workflow-canvas-error">{layout.error}</div> : layout.nodes.length === 0 ? <div className="workflow-canvas-empty">Workflow preview appears here when you add nodes.</div> : <div className="workflow-canvas-scroll" ref={scrollRef}><div className="workflow-canvas-scene" style={{ width: layout.width * zoom, height: layout.height * zoom }}><div className="workflow-canvas-content" style={{ width: layout.width, height: layout.height, transform: `scale(${zoom})`}}><svg className="workflow-connections" width={layout.width} height={layout.height} aria-hidden="true"><defs><marker id="workflow-arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3 z" fill="#f59e0b"/></marker></defs>{layout.edges.map(edge => { const from = nodeById.get(edge.from); const to = nodeById.get(edge.to); return from && to ? <path key={edge.id} d={`M ${from.x + 170} ${from.y + 33} C ${from.x + 220} ${from.y + 33}, ${to.x - 45} ${to.y + 33}, ${to.x} ${to.y + 33}`} markerEnd="url(#workflow-arrowhead)"/> : null; })}</svg>{layout.nodes.map(node => <article className="workflow-canvas-node" key={node.id} style={{ left: node.x, top: node.y }}><span className="workflow-canvas-node-icon">{node.type.slice(0, 1).toUpperCase()}</span><div><strong>{node.name}</strong><small>{node.type}</small></div><span className="workflow-node-port input"/><span className="workflow-node-port output"/></article>)}</div></div></div>}
   </div>;
 }
