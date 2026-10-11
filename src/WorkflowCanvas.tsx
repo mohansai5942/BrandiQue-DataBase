@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
-import { isRecordPayload } from '../api/security';
+import { isRecordPayload } from '../api/_security';
 
 type WorkflowNode = { id: string; name: string; type: string; position: [number, number]; x: number; y: number };
 type WorkflowEdge = { id: string; from: string; to: string };

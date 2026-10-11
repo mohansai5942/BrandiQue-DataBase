@@ -2,15 +2,22 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { authorizeAdminToken } from './admin-auth.js';
-import { getCorsHeaders, getErrorMessage, getErrorStatus, isRecordPayload } from './security.js';
+import { authorizeAdminToken } from './_admin-auth.js';
+import { createRateLimiter, getCorsHeaders, getErrorStatus, getPublicErrorMessage, isRecordPayload, type CorsScope } from './_security.js';
 import { NOTIFY_COLLECTIONS, getVapid, notifySubmission, parseSubscription, removeSubscription, saveSubscription, sendToAll, type NotifyCollection } from './_push.js';
-import { isDashboardCollection, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload } from './validation.js';
+import { isDashboardCollection, isSafeDocId, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload, validateRecordShape } from './_validation.js';
 
 const MAX_DOC_BYTES = 220 * 1024;
 const MAX_RESULTS = 100;
 const BACKUP_COLLECTIONS = ['messages', 'projects', 'settings', 'websites', 'n8n_projects', 'n8n_project_forms', 'prompts'] as const;
 const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
+const MAX_IMPORT_DOC_BYTES = 900 * 1024;
+const MAX_IMPORT_DOCS_PER_REQUEST = 500;
+const PERMANENT_DELETE_COLLECTIONS = new Set<string>(BACKUP_COLLECTIONS);
+// Firestore auto-IDs are 20 alphanumeric characters; allow a little slack for custom IDs.
+const NOTIFY_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const notifyLimiter = createRateLimiter(20, 10 * 60 * 1000);
+const publicProfileLimiter = createRateLimiter(120, 60 * 1000);
 function restoreBackupTimestamps(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(restoreBackupTimestamps);
   if (!isRecordPayload(value)) return value;
@@ -41,9 +48,9 @@ function getApp() {
   return initializeApp({ credential: applicationDefault(), projectId: process.env.FIREBASE_PROJECT_ID || 'brandique-web-solutions' });
 }
 
-function cors(req: VercelRequest, res: VercelResponse) {
+function cors(req: VercelRequest, res: VercelResponse, scope: CorsScope) {
   const originHeader = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
-  const headers = getCorsHeaders(originHeader, process.env);
+  const headers = getCorsHeaders(originHeader, process.env, scope);
   if (!headers) return false;
   for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
   return true;
@@ -60,68 +67,108 @@ async function requireAdmin(req: VercelRequest) {
   return authorizeAdminToken(req.headers.authorization, getAuth(getApp()), process.env.ADMIN_EMAILS);
 }
 
-function safeDocId(value: string) {
-  if (!value || value.length > 1500 || value.includes('/')) throw Object.assign(new Error('Invalid document ID.'), { statusCode: 400 });
+function safeDocId(value: unknown) {
+  if (!isSafeDocId(value)) throw Object.assign(new Error('Invalid document ID.'), { statusCode: 400 });
   return value;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!cors(req, res)) return sendError(res, 403, 'Origin not allowed.');
-  if (req.method === 'OPTIONS') return res.status(204).end();
+function parseJsonBody(body: unknown): unknown {
+  if (typeof body !== 'string') return body;
+  try { return JSON.parse(body); } catch { throw Object.assign(new Error('Body must be valid JSON.'), { statusCode: 400 }); }
+}
 
+function clientIp(req: VercelRequest): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded || '').split(',')[0].trim();
+  return first || req.socket?.remoteAddress || 'unknown';
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Cache-Control', 'no-store');
   const queryRoute = Array.isArray(req.query.route) ? req.query.route.join('/') : String(req.query.route || '');
   // Vercel catch-all routes can expose the wildcard differently across runtime/build versions.
   // Fall back to the URL path so /api/health is recognized reliably.
   const pathname = String(req.url || '').split('?')[0];
   const pathRoute = pathname.startsWith('/api/') ? pathname.slice('/api/'.length).replace(/\/$/, '') : '';
   const route = queryRoute || pathRoute;
-  if (route === 'health' && req.method === 'GET') {
-    return res.status(200).json({
-      ok: true,
-      service: 'BrandiQue Data API',
-      projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS),
-      adminAllowlistConfigured: Boolean(process.env.ADMIN_EMAILS)
-    });
-  }
 
+  // Only the submission ping may be called cross-origin from brandique.in; everything else is dashboard-only.
+  if (!cors(req, res, route === 'notify-submission' ? 'submission' : 'dashboard')) return sendError(res, 403, 'Origin not allowed.');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
+  // Public: the login screen avatar. Returns only the avatar URL, nothing else from settings.
   if (route === 'public-profile' && req.method === 'GET') {
     try {
+      if (!publicProfileLimiter(clientIp(req))) return sendError(res, 429, 'Too many requests.');
       const snap = await getFirestore(getApp()).collection('settings').limit(20).get();
       const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Record<string, unknown>));
       const pick = docs.find(d => d.id === 'admin-profile' && d.adminAvatarUrl) || docs.find(d => d.id === 'contact' && d.adminAvatarUrl) || docs.find(d => typeof d.adminAvatarUrl === 'string' && d.adminAvatarUrl);
-      const url = pick && typeof pick.adminAvatarUrl === 'string' && /^https?:\/\//.test(pick.adminAvatarUrl) ? pick.adminAvatarUrl : '';
-      res.setHeader('Cache-Control', 'no-store');
+      const url = pick && typeof pick.adminAvatarUrl === 'string' && pick.adminAvatarUrl.length <= 2048 && /^https?:\/\/[^\s]+$/.test(pick.adminAvatarUrl) ? pick.adminAvatarUrl : '';
       return res.status(200).json({ ok: true, avatarUrl: url });
-    } catch (error) { return sendError(res, 500, getErrorMessage(error)); }
+    } catch (error) {
+      console.error('public-profile failed:', error instanceof Error ? error.message : 'unknown');
+      return sendError(res, 500, 'Server error. Please try again later.');
+    }
   }
+
+  // Public: brandique.in pings this after a visitor submits a form. It carries no content; the server
+  // re-reads the document, requires it to exist, be under 15 minutes old and not yet notified, and builds
+  // the notification text itself (fixed titles, capped lengths).
   if (route === 'notify-submission' && req.method === 'POST') {
     try {
-      let body: unknown = req.body;
-      if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
+      if (typeof req.body === 'string' && req.body.length > 1024) return sendError(res, 413, 'Request too large.');
+      if (!notifyLimiter(clientIp(req))) return sendError(res, 429, 'Too many requests.');
+      let body: unknown;
+      try { body = parseJsonBody(req.body); } catch { body = null; }
       if (!isRecordPayload(body) || typeof body.collection !== 'string' || typeof body.id !== 'string') return sendError(res, 400, 'Invalid request.');
-      if (!(NOTIFY_COLLECTIONS as readonly string[]).includes(body.collection)) return sendError(res, 400, 'Unsupported collection.');
-      const result = await notifySubmission(getFirestore(getApp()), body.collection as NotifyCollection, safeDocId(body.id));
+      if (!(NOTIFY_COLLECTIONS as readonly string[]).includes(body.collection)) return sendError(res, 400, 'Invalid request.');
+      if (!NOTIFY_ID_PATTERN.test(body.id)) return sendError(res, 400, 'Invalid request.');
+      const result = await notifySubmission(getFirestore(getApp()), body.collection as NotifyCollection, body.id);
       return res.status(200).json({ ok: true, ...result });
-    } catch (error) { return sendError(res, getErrorStatus(error), getErrorMessage(error)); }
+    } catch (error) {
+      console.error('notify-submission failed:', error instanceof Error ? error.message : 'unknown');
+      return sendError(res, 500, 'Server error. Please try again later.');
+    }
   }
 
   try {
+    // Every route below requires a verified, allowlisted Firebase admin.
     const admin = await requireAdmin(req);
     const db = getFirestore(getApp());
+
+    if (route === 'health' && req.method === 'GET') {
+      return res.status(200).json({
+        ok: true,
+        service: 'BrandiQue Data API',
+        projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS),
+        adminAllowlistConfigured: Boolean(process.env.ADMIN_EMAILS)
+      });
+    }
+
+    if (route === 'permanent-delete' && req.method === 'POST') {
+      const body = parseJsonBody(req.body);
+      if (!isRecordPayload(body) || body.confirmation !== 'DELETE' || typeof body.collection !== 'string' || !PERMANENT_DELETE_COLLECTIONS.has(body.collection) || !isSafeDocId(body.id)) {
+        return sendError(res, 400, 'Invalid collection, record ID, or confirmation.');
+      }
+      const ref = db.collection(body.collection).doc(body.id);
+      if (!(await ref.get()).exists) return sendError(res, 404, 'Record was not found. It may already have been deleted.');
+      await ref.delete();
+      return res.status(200).json({ ok: true, permanentlyDeleted: true, collection: body.collection, id: body.id });
+    }
 
     if (route === 'push-public-key' && req.method === 'GET') {
       return res.status(200).json({ ok: true, publicKey: (await getVapid(db)).publicKey });
     }
     if (route === 'push-subscribe' && req.method === 'POST') {
-      const body = isRecordPayload(req.body) ? req.body : {};
-      const sub = parseSubscription(body.subscription);
+      const body = parseJsonBody(req.body);
+      const sub = isRecordPayload(body) ? parseSubscription(body.subscription) : null;
       if (!sub) return sendError(res, 400, 'Invalid push subscription.');
       await saveSubscription(db, sub, admin, String(req.headers['user-agent'] || ''));
       return res.status(200).json({ ok: true });
     }
     if (route === 'push-unsubscribe' && req.method === 'POST') {
-      const body = isRecordPayload(req.body) ? req.body : {};
-      if (typeof body.endpoint === 'string') await removeSubscription(db, body.endpoint);
+      const body = parseJsonBody(req.body);
+      if (isRecordPayload(body) && typeof body.endpoint === 'string' && body.endpoint.startsWith('https://') && body.endpoint.length <= 2000) await removeSubscription(db, body.endpoint);
       return res.status(200).json({ ok: true });
     }
     if (route === 'push-test' && req.method === 'POST') {
@@ -134,6 +181,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const collectionName = readQuery(req.query.collection);
         if (!BACKUP_COLLECTIONS.includes(collectionName as typeof BACKUP_COLLECTIONS[number])) return sendError(res, 400, 'Unsupported collection.');
         const after = readQuery(req.query.after);
+        if (after) safeDocId(after);
         let query = db.collection(collectionName).orderBy(FieldPath.documentId()).limit(5);
         if (after) query = query.startAfter(after);
         const snapshot = await query.get();
@@ -144,7 +192,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (req.method === 'POST') {
         const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {});
         if (Buffer.byteLength(rawBody, 'utf8') > MAX_BACKUP_BYTES) return sendError(res, 413, 'Import request is larger than the 50 MB limit.');
-        const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        const body = parseJsonBody(req.body);
         if (isRecordPayload(body) && body.action === 'delete-all') {
           if (body.confirmation !== 'DELETE ALL') return sendError(res, 400, 'Permanent deletion confirmation is missing.');
           const deletedByCollection: Record<string, number> = {};
@@ -162,7 +210,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (!BACKUP_COLLECTIONS.includes(name as typeof BACKUP_COLLECTIONS[number])) return sendError(res, 400, `Unsupported backup collection: ${name}`);
           if (!isRecordPayload(value) || !Array.isArray(value.documents)) return sendError(res, 400, `Invalid document list for ${name}.`);
           for (const document of value.documents) {
-            if (!isRecordPayload(document) || typeof document.id !== 'string' || !document.id.trim() || document.id.includes('/') || !isRecordPayload(document.data)) return sendError(res, 400, `Invalid document in ${name}; no writes were started.`);
+            if (!isRecordPayload(document) || !isSafeDocId(document.id) || !isRecordPayload(document.data)) return sendError(res, 400, `Invalid document in ${name}; no writes were started.`);
+            if (validateRecordShape(document.data) || Buffer.byteLength(JSON.stringify(document.data), 'utf8') > MAX_IMPORT_DOC_BYTES) return sendError(res, 400, `Document ${document.id.slice(0, 60)} in ${name} is too large or malformed; no writes were started.`);
+            if (entries.length >= MAX_IMPORT_DOCS_PER_REQUEST) return sendError(res, 413, `Send at most ${MAX_IMPORT_DOCS_PER_REQUEST} documents per import request.`);
             entries.push({ collection: name, id: document.id, data: document.data });
           }
         }
@@ -239,8 +289,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return sendError(res, 405, 'Method not allowed for this endpoint.');
   } catch (error: unknown) {
     const status = getErrorStatus(error);
-    if (status === 401 || status === 403 || status === 400) return sendError(res, status, getErrorMessage(error) || 'Request rejected.');
-    console.error('BrandiQue Data API error:', getErrorMessage(error));
+    if (status >= 400 && status < 500) return sendError(res, status, getPublicErrorMessage(error));
+    console.error('BrandiQue Data API error:', error instanceof Error ? error.message : 'unknown');
     return sendError(res, 500, 'Server error. Check deployment environment variables and server logs.');
   }
 }

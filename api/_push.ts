@@ -94,7 +94,8 @@ function toMillis(value: unknown): number {
 }
 
 function text(value: unknown, max = 80) {
-  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '';
+  // Visitor-supplied text: strip control/bidi characters, collapse whitespace, cap length.
+  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '';
 }
 
 export function describeSubmission(collection: NotifyCollection, data: Record<string, unknown>): PushPayload {

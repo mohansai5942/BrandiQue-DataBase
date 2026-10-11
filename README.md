@@ -47,11 +47,18 @@ Server-only:
 - `FIREBASE_SERVICE_ACCOUNT_JSON` — paste the **entire JSON contents** of a service account created for the **new** Firebase project. Store this as a Vercel secret/environment variable only. Never commit it, place it in a VITE variable, or paste it into chat. Prefer a dedicated service account. Grant `Cloud Datastore User` for Firestore record access and `Firebase Authentication Viewer` for the token revocation/disabled-user check; do not reuse the Firebase Admin SDK service-agent identity.
 - `ADMIN_EMAILS` — comma-separated exact email addresses permitted to sign in, e.g. `your-admin@example.com`. Use the account's actual email and ensure Firebase Auth email verification is complete.
 - `DASHBOARD_ORIGIN` — exact deployed dashboard origin, e.g. `https://your-project.vercel.app` during staging, then `https://data.brandique.in`.
-- `ALLOWED_ORIGINS` — optional comma-separated cross-origin callers. Leave blank for same-origin dashboard-only access; later add `https://brandique.in,https://www.brandique.in` only if the public site is intentionally configured to call this API from the browser.
+- `ALLOWED_ORIGINS` — optional comma-separated extra origins allowed to call `/api/notify-submission` only. `https://brandique.in` and `https://www.brandique.in` are built in for that route; every other route accepts only the dashboard's own origin.
 
 Changing Vercel environment variables requires a new deployment to take effect.
 
 ## API
+
+Public routes (no sign-in):
+
+- `GET /api/public-profile` — returns only `{ ok, avatarUrl }` for the login screen.
+- `POST /api/notify-submission` — called by brandique.in after a form submission with `{ collection, id }` only. The server re-reads the document and sends one push per fresh (under 15 minutes old) submission; the text is built server-side with capped lengths. Rate-limited per IP.
+
+Admin routes (everything else):
 
 - `GET /api/health` — returns service status and whether the server configuration appears to be present. Does not return secrets.
 - `GET /api/data?collection=projects` — list up to 100 records.
@@ -60,16 +67,18 @@ Changing Vercel environment variables requires a new deployment to take effect.
 - `PATCH /api/data?collection=projects&id=DOCUMENT_ID` — merge updates into a record.
 - `DELETE /api/data?collection=projects&id=DOCUMENT_ID` — reversible soft delete by setting `isDeleted` and `deletedAt`.
 
-All `/api/data` routes require `Authorization: Bearer <Firebase ID token>`, a verified Firebase-authenticated email, and membership in `ADMIN_EMAILS`. Collection names are allowlisted. The UI does not expose permanent-delete functionality.
+- `POST /api/permanent-delete`, `GET|POST /api/backup`, `GET /api/push-public-key`, `POST /api/push-subscribe|push-unsubscribe|push-test`.
+
+Every admin route requires `Authorization: Bearer <Firebase ID token>` (verified, not revoked), an enabled account whose email is in `ADMIN_EMAILS`, and Firebase email verification. Collection names are allowlisted, document IDs are validated (no `/`, `.`/`..`, or reserved `__x__` names), record shapes and sizes are capped, and server errors return generic messages. Helper modules in `api/` are prefixed with `_` so Vercel never deploys them as functions.
 
 ## Firebase permissions and data safety
 
 - The API uses Firebase Admin SDK on the server; the SDK bypasses Firestore Security Rules. Therefore the API's authentication and collection allowlist are critical.
 - Firestore rules should still protect direct browser access. Do not deploy public `allow read, write: if true` rules.
-- The live website currently has existing direct Firestore operations. Do not apply restrictive rules or change its Firebase config until those flows are migrated and staging-tested, or some website features may stop working.
+- `firestore.rules.example` is the recommended ruleset: public create-only, validated form submissions; public read of published content and `settings/contact` only; everything else (push_subscriptions, system_config, prompts) server-only. Keep it in step with the website repo's `firestore.rules` and publish one ruleset in the Firebase console.
 - Back up existing records before migrating. Test contact submissions, project listing, settings, website links, automation listings, and error/denied-access paths before production cutover.
 - This dashboard returns at most 100 records per collection in the first version. For larger collections, add cursor-based pagination before relying on it as a complete export tool.
-- Project images and videos upload directly to Firebase Storage after Firebase Authentication. Before enabling uploads, create/verify the Storage bucket in the new project and deploy the rules in `storage.rules.example` after replacing its admin email placeholder with every exact email in `ADMIN_EMAILS`. The rules keep writes limited to verified admin accounts, cap each file at 25 MB, and allow public reads for portfolio media. Firebase will deny browser uploads until those exact rules are configured. Do not store Base64 media in Firestore.
+- Project images and videos upload directly to Firebase Storage after Firebase Authentication. Before enabling uploads, create/verify the Storage bucket in the new project and deploy the rules in `storage.rules.example` after replacing its admin email placeholder with every exact email in `ADMIN_EMAILS`. The rules keep writes limited to verified admin accounts, cap each project file at 25 MB and the admin avatar (`dashboard/admin/`) at 2 MB, and allow public reads for portfolio media and the avatar. Firebase will deny browser uploads until those exact rules are configured. Do not store Base64 media in Firestore.
 - The editor accepts up to 10 project images and 5 videos. Video playback depends on the Storage bucket and the browser's codec support.
 
 ## Local development

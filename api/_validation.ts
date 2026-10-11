@@ -1,4 +1,4 @@
-import { isRecordPayload } from './security.ts';
+import { isRecordPayload } from './_security.ts';
 
 export type DashboardCollection = 'messages' | 'projects' | 'settings' | 'websites' | 'n8n_projects' | 'n8n_project_forms' | 'prompts';
 export type RecordOperation = 'create' | 'update';
@@ -17,6 +17,38 @@ export function prepareSoftDelete(now = new Date().toISOString()): Record<string
   return { isDeleted: true, deletedAt: now, updatedAt: now };
 }
 
+const MAX_DOC_ID_BYTES = 1500;
+
+/** Firestore document IDs: no path separators, not `.`/`..`, not reserved `__name__` style, <= 1500 bytes. */
+export function isSafeDocId(value: unknown): value is string {
+  if (typeof value !== 'string' || !value || value.trim() !== value) return false;
+  if (new TextEncoder().encode(value).length > MAX_DOC_ID_BYTES) return false;
+  if (value.includes('/') || value === '.' || value === '..' || /^__.*__$/.test(value)) return false;
+  // Control characters are never legitimate in IDs and are a common injection vector in logs/UI.
+  return !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+/** Shape limits for arbitrary admin-edited records (sizes are additionally capped by byte length). */
+export function validateRecordShape(value: unknown, depth = 0): string | null {
+  if (depth > 12) return 'Record is nested too deeply.';
+  if (Array.isArray(value)) {
+    if (value.length > 2000) return 'Lists may contain at most 2000 items.';
+    for (const item of value) { const error = validateRecordShape(item, depth + 1); if (error) return error; }
+    return null;
+  }
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? null : 'Numbers must be finite.';
+  if (!isRecordPayload(value)) return 'Unsupported value type in record.';
+  const keys = Object.keys(value);
+  if (keys.length > 500) return 'Objects may contain at most 500 fields.';
+  for (const key of keys) {
+    if (!key || key.length > 300 || /^__.*__$/.test(key) || key === '__proto__' || key.includes('`')) return `Field name "${key.slice(0, 40)}" is not allowed.`;
+    const error = validateRecordShape(value[key], depth + 1);
+    if (error) return error;
+  }
+  return null;
+}
+
 export function isDashboardCollection(value: string): value is DashboardCollection {
   return value === 'messages' || value === 'projects' || value === 'settings' || value === 'websites'
     || value === 'n8n_projects' || value === 'n8n_project_forms' || value === 'prompts';
@@ -32,6 +64,8 @@ function emailValue(value: string): boolean {
 
 export function validateRecordPayload(collection: DashboardCollection, value: unknown, operation: RecordOperation): string | null {
   if (!isRecordPayload(value)) return 'Body must be a JSON object.';
+  const shapeError = validateRecordShape(value);
+  if (shapeError) return shapeError;
   const required = (key: string, label: string, max: number): string | null => {
     const field = value[key];
     if (operation === 'create' && (!textValue(field) || !field.trim())) return `${label} is required.`;
