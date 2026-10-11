@@ -1,59 +1,111 @@
 rules_version = '2';
+
+// BrandiQue Firestore security rules (one ruleset for the whole brandique-web-solutions database).
+//
+// Who talks to this database:
+//   * The public website (brandique.in) uses the browser SDK without signing in. It only READS
+//     published content (settings/contact, websites, projects, n8n_projects) and CREATES form
+//     submissions (messages, n8n_project_forms).
+//   * The BrandiQue Data Console (data.brandique.in) reads and writes everything through its
+//     server API with the Firebase Admin SDK, which bypasses these rules. The console's browser
+//     code never talks to Firestore directly.
+//
+// So no browser client needs write access to content or read access to submissions,
+// push_subscriptions, system_config (VAPID keys) or prompts. "Signed in" is never treated as
+// "admin": anyone can create a Firebase Auth account with the public web API key.
+//
+// These rules match the submission payloads written by the website repo's current code and its
+// own firestore.rules; the only difference is that settings is narrowed to the single public
+// `contact` document the website reads. Publish exactly ONE ruleset:
+// Firebase console -> Firestore Database -> Rules -> paste -> Publish.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
+
+    // ---------- helpers ----------
+    function data() {
+      return request.resource.data;
     }
 
-    // Public site can display portfolio data; only the trusted server API should write it.
-    match /projects/{documentId} {
+    function isString(field, minLen, maxLen) {
+      return data()[field] is string
+        && data()[field].size() >= minLen
+        && data()[field].size() <= maxLen;
+    }
+
+    function optionalString(field, maxLen) {
+      return !(field in data()) || (data()[field] is string && data()[field].size() <= maxLen);
+    }
+
+    function validEmail() {
+      return isString('email', 3, 254)
+        && data().email.matches('^[^@\\s<>]+@[^@\\s<>]+\\.[^@\\s<>]+$');
+    }
+
+    function validCreatedAt() {
+      // ISO timestamp string written by the browser, e.g. 2026-10-11T17:20:00.000Z
+      return isString('createdAt', 10, 40);
+    }
+
+    // ---------- published website content: public read, no client writes ----------
+    // Only the public contact/settings document is readable (the website reads settings/contact).
+    // Any other settings document (e.g. admin-profile) is server-only.
+    match /settings/{settingId} {
+      allow read: if settingId == 'contact';
+      allow write: if false;
+    }
+
+    match /websites/{websiteId} {
       allow read: if true;
       allow write: if false;
     }
 
-    match /websites/{documentId} {
+    match /projects/{projectId} {
       allow read: if true;
       allow write: if false;
     }
 
-    // Public site needs the published contact settings. Server API handles management writes.
-    match /settings/{documentId} {
+    match /n8n_projects/{projectId} {
       allow read: if true;
       allow write: if false;
     }
 
-    // Visitors may submit enquiries, but must not read or alter other visitors' submissions.
-    match /messages/{documentId} {
-      allow create: if request.resource.data.keys().hasAll(['name', 'email', 'message'])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() <= 120
-        && request.resource.data.email is string
-        && request.resource.data.email.size() <= 254
-        && request.resource.data.message is string
-        && request.resource.data.message.size() <= 10000;
+    // ---------- form submissions: public create only, validated; never client-readable ----------
+    // Contact page form (source "contact") and the service inquiry modal (source "service").
+    // pushNotifiedAt / isDeleted cannot be set by visitors (hasOnly), so a visitor cannot
+    // suppress or forge the server's one-time push notification state.
+    match /messages/{messageId} {
+      allow create: if data().keys().hasAll(['source', 'name', 'email', 'message', 'createdAt'])
+        && data().keys().hasOnly(['source', 'service', 'name', 'email', 'phone', 'budget', 'message', 'serviceDetails', 'createdAt'])
+        && data().source in ['contact', 'service']
+        && isString('name', 1, 100)
+        && validEmail()
+        && isString('message', 1, 20000)
+        && optionalString('service', 200)
+        && optionalString('phone', 20)
+        && optionalString('budget', 50)
+        && (!('serviceDetails' in data()) || (data().serviceDetails is map && data().serviceDetails.size() <= 25))
+        && validCreatedAt();
       allow read, update, delete: if false;
     }
 
-    match /n8n_project_forms/{documentId} {
-      allow create: if request.resource.data.keys().hasAll(['name', 'email'])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() <= 120
-        && request.resource.data.email is string
-        && request.resource.data.email.size() <= 254;
+    // "Request custom setup" form on n8n workflow projects (Projects page).
+    match /n8n_project_forms/{formId} {
+      allow create: if data().keys().hasAll(['projectId', 'projectTitle', 'name', 'email', 'phone', 'createdAt'])
+        && data().keys().hasOnly(['projectId', 'projectTitle', 'name', 'email', 'phone', 'message', 'isDeleted', 'createdAt'])
+        && isString('projectId', 1, 200)
+        && isString('projectTitle', 0, 200)
+        && isString('name', 1, 100)
+        && validEmail()
+        && isString('phone', 7, 20)
+        && optionalString('message', 4000)
+        && (!('isDeleted' in data()) || data().isDeleted == false)
+        && validCreatedAt();
       allow read, update, delete: if false;
     }
 
-    match /n8n_projects/{documentId} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    // No browser access to prompt records until the public website's usage is audited.
-    match /prompts/{documentId} {
-      allow read, write: if false;
-    }
-
-    // Everything else stays private by default.
+    // ---------- everything else: prompts, push_subscriptions, system_config, ... ----------
+    // Server-only via the Data Console's Admin SDK.
     match /{document=**} {
       allow read, write: if false;
     }
