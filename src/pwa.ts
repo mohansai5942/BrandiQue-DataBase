@@ -77,7 +77,23 @@ export async function enablePush(getToken: () => Promise<string>): Promise<PushS
     const existingKey = sub.options.applicationServerKey ? btoa(String.fromCharCode(...new Uint8Array(sub.options.applicationServerKey))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') : '';
     if (existingKey && existingKey !== publicKey) { await sub.unsubscribe(); sub = null; }
   }
-  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+  if (!sub) {
+    const options = { userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) };
+    try {
+      sub = await reg.pushManager.subscribe(options);
+    } catch (first) {
+      // Stale or half-registered subscriptions make the push service refuse; clear and retry once.
+      try { const stale = await reg.pushManager.getSubscription(); if (stale) await stale.unsubscribe(); } catch { /* ignore */ }
+      await new Promise(resolve => setTimeout(resolve, 800));
+      try { sub = await reg.pushManager.subscribe(options); }
+      catch {
+        const brave = (navigator as Navigator & { brave?: unknown }).brave;
+        if (brave) throw new Error('Brave blocks push by default. Open brave://settings/privacy, turn on "Use Google services for push messaging", restart Brave and try again.');
+        const msg = first instanceof Error ? first.message : '';
+        throw new Error(`This browser's push service refused the registration${msg ? ` (${msg})` : ''}. Use Chrome on Android or Safari from the home-screen app on iPhone, check that Google Play services is updated, and keep battery saver off.`);
+      }
+    }
+  }
   const save = await fetch('/api/push-subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
