@@ -2,10 +2,10 @@
 .project-category-tabs{display:flex;gap:8px;overflow:auto;padding-bottom:3px}
 .project-category-tab{display:flex;align-items:center;gap:10px;white-space:nowrap;padding:9px 12px;border:1px solid rgba(255,255,255,.09);border-radius:9px;background:#111217;color:#aeb0ba;font-size:12px;font-weight:650}
 .project-category-tab span{display:grid;min-width:23px;height:22px;place-items:center;border-radius:6px;background:rgba(255,255,255,.06);color:#d8d9e0;font-size:11px}
-.project-category-tab.active{border-color:rgba(251,255,0,.3);background:rgba(251,255,0,.06);color:#fbff00}
+.project-category-tab.active{border-color:rgba(250,204,21,.3);background:rgba(250,204,21,.06);color:#facc15}
 .project-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
 .project-card{min-width:0;overflow:hidden;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:linear-gradient(160deg,#15161d,#101116);transition:transform .18s,border-color .18s}
-.project-card:hover{transform:translateY(-2px);border-color:rgba(251,255,0,.23)}
+.project-card:hover{transform:translateY(-2px);border-color:rgba(250,204,21,.23)}
 .project-card-preview{position:relative;width:100%;height:180px;padding:0;border:0;background:#0c0d12;color:#8c8f9c;display:grid;place-items:center;overflow:hidden;cursor:pointer}
 .project-card-preview img{width:100%;height:100%;object-fit:cover;transition:transform .3s}.project-card:hover .project-card-preview img{transform:scale(1.03)}
 .project-card-preview>span{display:grid;justify-items:center;gap:8px}.project-card-preview b{position:absolute;top:12px;right:12px;padding:5px 8px;border:1px solid rgba(255,255,255,.15);border-radius:6px;background:rgba(6,7,10,.78);color:#d6d8e0;font-size:10px;letter-spacing:.5px}

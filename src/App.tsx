@@ -3,7 +3,7 @@ import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowRight, BadgeCheck, Boxes, BriefcaseBusiness,
   Check, ChevronDown, CircleAlert, Database, FileJson2, FileText, Globe2, LayoutDashboard,
   ExternalLink, Eye, Film, ImagePlus, LoaderCircle, LockKeyhole, LogOut, Mail, MessageSquareText, MoreHorizontal, Pencil,
-  Moon, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Sun, Trash2, Upload, Users, WandSparkles, X
+  Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Trash2, Upload, Users, WandSparkles, X
 } from 'lucide-react';
 import { EmailAuthProvider, onAuthStateChanged, reload, reauthenticateWithCredential, sendEmailVerification, signInWithEmailAndPassword, signOut, updateEmail, updatePassword, User as FirebaseUser } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -69,20 +69,6 @@ async function apiRequest<T>(user: FirebaseUser, url: string, init?: RequestInit
   return body as T;
 }
 
-type Theme = 'dark' | 'light';
-const THEME_KEY = 'theme';
-function readTheme(): Theme { try { return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } }
-function ThemeToggle({ floating = false }: { floating?: boolean }) {
-  const [theme, setTheme] = useState<Theme>(readTheme);
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f4f5f7' : '#0a0b0e');
-  }, [theme]);
-  const next: Theme = theme === 'dark' ? 'light' : 'dark';
-  return <button type="button" className={floating ? 'icon-btn theme-toggle floating' : 'icon-btn theme-toggle'} title={`Switch to ${next} theme`} aria-label={`Switch to ${next} theme`} onClick={() => { try { localStorage.setItem(THEME_KEY, next); } catch {} setTheme(next); }}>{theme === 'dark' ? <Sun size={17}/> : <Moon size={17}/>}</button>;
-}
-
 function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -103,7 +89,6 @@ function LoginScreen() {
     } finally { setBusy(false); }
   }
   return <main className="login-shell login-shell-premium">
-    <ThemeToggle floating />
     <div className="login-glow glow-one" /><div className="login-glow glow-two" />
     <div className="login-card login-card-premium">
       <div className="login-avatar-wrap">
@@ -722,7 +707,7 @@ export default function App() {
     </aside>
 
     <main className="main-area">
-      <header className="topbar"><div className="breadcrumb"><span>Workspace</span><ArrowRight size={14}/><strong>{current.title}</strong></div><div className="top-actions"><ThemeToggle /><span className={apiStatus === 'ok' ? 'system-status' : 'system-status off'}><span className="status-dot"/>{apiStatus === 'ok' ? 'API connected' : apiStatus === 'checking' ? 'Checking API' : 'API needs setup'}</span><div className="user-pill"><div className="avatar">{(user.email || 'A').slice(0,1).toUpperCase()}</div><div><strong>{user.email}</strong><small>Administrator</small></div></div><button className="icon-btn" onClick={signOutUser} title="Sign out"><LogOut size={17}/></button></div></header>
+      <header className="topbar"><div className="breadcrumb"><span>Workspace</span><ArrowRight size={14}/><strong>{current.title}</strong></div><div className="top-actions"><span className={apiStatus === 'ok' ? 'system-status' : 'system-status off'}><span className="status-dot"/>{apiStatus === 'ok' ? 'API connected' : apiStatus === 'checking' ? 'Checking API' : 'API needs setup'}</span><div className="user-pill"><div className="avatar">{(user.email || 'A').slice(0,1).toUpperCase()}</div><div><strong>{user.email}</strong><small>Administrator</small></div></div><button className="icon-btn" onClick={signOutUser} title="Sign out"><LogOut size={17}/></button></div></header>
 
       <section className="page-content">
         {user && !user.emailVerified && <div className="notice warn" style={{ marginBottom: 18, padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
