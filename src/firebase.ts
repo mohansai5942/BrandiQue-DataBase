@@ -1,5 +1,5 @@
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { browserLocalPersistence, browserSessionPersistence, indexedDBLocalPersistence, initializeAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 const config = {
@@ -15,5 +15,7 @@ export const firebaseConfigured = Boolean(config.apiKey && config.appId && confi
 const app: FirebaseApp | null = firebaseConfigured
   ? getApps().length ? getApp() : initializeApp(config)
   : null;
-export const auth = app ? getAuth(app) : null;
+// Email/password only: initializing without a popup/redirect resolver keeps the same persistence as
+// getAuth() but never loads Google's gapi script or auth iframe, so the CSP can stay script-src 'self'.
+export const auth = app ? initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence] }) : null;
 export const storage = app ? getStorage(app) : null;
