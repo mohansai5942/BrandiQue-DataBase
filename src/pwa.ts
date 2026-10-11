@@ -66,8 +66,8 @@ export async function enablePush(getToken: () => Promise<string>): Promise<PushS
   if (!pushSupported()) return 'unsupported';
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'default';
-  const reg = await navigator.serviceWorker.register('/sw.js');
-  await navigator.serviceWorker.ready;
+  await navigator.serviceWorker.register('/sw.js');
+  let reg = await navigator.serviceWorker.ready;
   const token = await getToken();
   const keyRes = await fetch('/api/push-public-key', { headers: { Authorization: `Bearer ${token}` } });
   if (!keyRes.ok) throw new Error(await apiError(keyRes, 'Could not load the notification key.'));
@@ -84,6 +84,10 @@ export async function enablePush(getToken: () => Promise<string>): Promise<PushS
     } catch (first) {
       // Stale or half-registered subscriptions make the push service refuse; clear and retry once.
       try { const stale = await reg.pushManager.getSubscription(); if (stale) await stale.unsubscribe(); } catch { /* ignore */ }
+      // Fully re-register the service worker so the browser gets a clean push registration.
+      try { await reg.unregister(); } catch { /* ignore */ }
+      await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+      reg = await navigator.serviceWorker.ready;
       await new Promise(resolve => setTimeout(resolve, 800));
       try { sub = await reg.pushManager.subscribe(options); }
       catch {
