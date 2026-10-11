@@ -10,6 +10,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, firebaseConfigured, storage } from './firebase';
 import { getMessageClassification, isRecordPayload } from '../api/security';
 import { WorkflowCanvas } from './WorkflowCanvas';
+import { currentPushState, enablePush, isIos, isStandalone, sendTestPush, useAdminAvatar, useInstallPrompt, type PushState } from './pwa';
 
 type CollectionName = 'messages' | 'projects' | 'settings' | 'websites' | 'n8n_projects' | 'n8n_project_forms' | 'prompts';
 type RecordValue = Record<string, unknown> & { id: string };
@@ -69,16 +70,56 @@ async function apiRequest<T>(user: FirebaseUser, url: string, init?: RequestInit
   return body as T;
 }
 
+function AppHelper({ user, notify }: { user: FirebaseUser; notify: (message: string) => void }) {
+  const { canInstall, installed, install, iosHint } = useInstallPrompt();
+  const [push, setPush] = useState<PushState | 'loading'>('loading');
+  const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useState(() => { try { return sessionStorage.getItem('bq-helper-hidden') === '1'; } catch { return false; } });
+  useEffect(() => { void currentPushState().then(setPush); }, [installed]);
+  const standalone = installed || isStandalone();
+  const dismiss = () => { setHidden(true); try { sessionStorage.setItem('bq-helper-hidden', '1'); } catch { /* ignore */ } };
+  async function turnOn() {
+    setBusy(true);
+    try {
+      const state = await enablePush(() => user.getIdToken());
+      setPush(state);
+      if (state === 'subscribed') { notify('Notifications on. Every new form submission will reach this device.'); void sendTestPush(() => user.getIdToken()); }
+      else if (state === 'denied') notify('Notifications are blocked. Allow them in your phone settings for this app.');
+    } catch (e) { notify(e instanceof Error ? e.message : 'Could not turn on notifications.'); }
+    finally { setBusy(false); }
+  }
+  const askPush = push === 'default' || push === 'granted';
+  // After install (standalone launch), ask for notifications first and prominently.
+  if (standalone && askPush) return <div className="push-sheet-backdrop"><div className="push-sheet">
+    <div className="push-sheet-icon"><img src="/icons/icon-192.png" alt=""/></div>
+    <h3>Get notified about new leads</h3>
+    <p>Allow notifications so every new contact, service or automation enquiry pings this phone instantly.</p>
+    <button className="primary" disabled={busy} onClick={() => void turnOn()}>{busy ? <LoaderCircle className="spin" size={15}/> : <BadgeCheck size={15}/>} Allow notifications</button>
+    <button className="secondary" onClick={() => setPush('unsupported')}>Not now</button>
+  </div></div>;
+  if (hidden) return null;
+  if (!standalone && (canInstall || iosHint)) return <div className="app-helper">
+    <img src="/icons/icon-192.png" alt=""/>
+    <div><strong>Install the BQ Data app</strong><span>{canInstall ? 'Open it from your home screen and get lead notifications.' : 'Tap Share, then “Add to Home Screen”, then open it from there.'}</span></div>
+    {canInstall && <button className="primary" onClick={() => void install()}><ArrowDownToLine size={15}/> Install</button>}
+    <button className="icon-only" aria-label="Dismiss" onClick={dismiss}><X size={15}/></button>
+  </div>;
+  if (askPush && !(isIos() && !standalone)) return <div className="app-helper">
+    <img src="/icons/icon-192.png" alt=""/>
+    <div><strong>Turn on lead notifications</strong><span>Get a push alert on this device whenever someone fills a form.</span></div>
+    <button className="primary" disabled={busy} onClick={() => void turnOn()}>{busy ? <LoaderCircle className="spin" size={15}/> : <BadgeCheck size={15}/>} Allow</button>
+    <button className="icon-only" aria-label="Dismiss" onClick={dismiss}><X size={15}/></button>
+  </div>;
+  return null;
+}
+
 function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
-  useEffect(() => {
-    try { setAvatarUrl(window.localStorage.getItem('brandique-admin-avatar') || ''); } catch { /* storage may be disabled */ }
-  }, []);
+  const [avatarUrl] = useAdminAvatar();
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(''); setBusy(true);
     try {
@@ -409,7 +450,7 @@ function WorkflowDetailDialog({ record, onClose, onOpenEnquiries }: { record: Re
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [active, setActive] = useState<CollectionName>('messages');
+  const [active, setActive] = useState<CollectionName>(() => { const q = new URLSearchParams(window.location.search).get('section'); return (SECTIONS.some(s => s.id === q) ? q : 'messages') as CollectionName; });
   const [records, setRecords] = useState<RecordValue[]>([]);
   const [counts, setCounts] = useState<Partial<Record<CollectionName, number>>>({});
   const [loading, setLoading] = useState(false);
@@ -425,7 +466,7 @@ export default function App() {
   const [viewingWorkflow, setViewingWorkflow] = useState<RecordValue | null>(null);
   const [toast, setToast] = useState('');
   const [showSecurity, setShowSecurity] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const [avatarUrl, setAvatarUrl] = useAdminAvatar();
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
   const current = SECTIONS.find(s => s.id === active)!;
 
@@ -716,6 +757,7 @@ export default function App() {
           <button className="secondary" onClick={() => void sendVerificationAgain()}><Mail size={15}/> Send email</button>
           <button className="secondary" onClick={() => void refreshVerificationStatus()}><RefreshCw size={15}/> Check again</button>
         </div>}
+        <AppHelper user={user} notify={notify}/>
         <div className="welcome-row"><div><div className="eyebrow"><span className="gold-line"/> BUSINESS DATA MANAGEMENT</div><h1>{active === 'messages' ? <>Good systems. <em>Clear insights.</em></> : current.title}</h1><p>{active === 'messages' ? 'A secure, single place to view and manage the records powering your business.' : current.subtitle}</p></div><div className="welcome-ornament"><div className="ornament-ring"/><Database size={27}/><span> BQ / DATA</span></div></div>
         <div className="stat-grid">
           <div className="stat-card"><div className="stat-top"><span>Total loaded records</span><Boxes size={17}/></div><strong>{dashboardCounts.total}</strong><small>Across collections visited this session</small></div>
@@ -750,7 +792,7 @@ export default function App() {
     {editor && <RecordEditor key={typeof editor === 'string' ? `new-${active}` : editor.id} section={current} initial={editor === 'new' ? null : editor} onClose={() => setEditor(null)} onSave={saveRecord} busy={busy}/>}
     {viewingProject && <ProjectDetailDialog record={viewingProject} onClose={() => setViewingProject(null)}/>}
     {viewingWorkflow && <WorkflowDetailDialog record={viewingWorkflow} onClose={() => setViewingWorkflow(null)} onOpenEnquiries={() => { setViewingWorkflow(null); setActive('n8n_project_forms'); }}/>}
-    {showSecurity && user && <AdminSecurityModal user={user} avatarUrl={avatarUrl} onAvatarSaved={url => { setAvatarUrl(url); try { window.localStorage.setItem('brandique-admin-avatar', url); } catch { /* storage may be disabled */ } }} onClose={() => setShowSecurity(false)} notify={notify}/>}
+    {showSecurity && user && <AdminSecurityModal user={user} avatarUrl={avatarUrl} onAvatarSaved={setAvatarUrl} onClose={() => setShowSecurity(false)} notify={notify}/>}
     {toast && <div className="toast"><Check size={16}/>{toast}</div>}
   </div>;
 }

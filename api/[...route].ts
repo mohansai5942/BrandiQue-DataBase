@@ -4,6 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { authorizeAdminToken } from './admin-auth.js';
 import { getCorsHeaders, getErrorMessage, getErrorStatus, isRecordPayload } from './security.js';
+import { NOTIFY_COLLECTIONS, getVapid, notifySubmission, parseSubscription, removeSubscription, saveSubscription, sendToAll, type NotifyCollection } from './push.js';
 import { isDashboardCollection, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload } from './validation.js';
 
 const MAX_DOC_BYTES = 220 * 1024;
@@ -83,9 +84,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
+  if (route === 'public-profile' && req.method === 'GET') {
+    try {
+      const snap = await getFirestore(getApp()).collection('settings').limit(20).get();
+      const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Record<string, unknown>));
+      const pick = docs.find(d => d.id === 'admin-profile' && d.adminAvatarUrl) || docs.find(d => d.id === 'contact' && d.adminAvatarUrl) || docs.find(d => typeof d.adminAvatarUrl === 'string' && d.adminAvatarUrl);
+      const url = pick && typeof pick.adminAvatarUrl === 'string' && /^https?:\/\//.test(pick.adminAvatarUrl) ? pick.adminAvatarUrl : '';
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json({ ok: true, avatarUrl: url });
+    } catch (error) { return sendError(res, 500, getErrorMessage(error)); }
+  }
+  if (route === 'notify-submission' && req.method === 'POST') {
+    try {
+      let body: unknown = req.body;
+      if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
+      if (!isRecordPayload(body) || typeof body.collection !== 'string' || typeof body.id !== 'string') return sendError(res, 400, 'Invalid request.');
+      if (!(NOTIFY_COLLECTIONS as readonly string[]).includes(body.collection)) return sendError(res, 400, 'Unsupported collection.');
+      const result = await notifySubmission(getFirestore(getApp()), body.collection as NotifyCollection, safeDocId(body.id));
+      return res.status(200).json({ ok: true, ...result });
+    } catch (error) { return sendError(res, getErrorStatus(error), getErrorMessage(error)); }
+  }
+
   try {
     const admin = await requireAdmin(req);
     const db = getFirestore(getApp());
+
+    if (route === 'push/public-key' && req.method === 'GET') {
+      return res.status(200).json({ ok: true, publicKey: (await getVapid(db)).publicKey });
+    }
+    if (route === 'push/subscribe' && req.method === 'POST') {
+      const body = isRecordPayload(req.body) ? req.body : {};
+      const sub = parseSubscription(body.subscription);
+      if (!sub) return sendError(res, 400, 'Invalid push subscription.');
+      await saveSubscription(db, sub, admin, String(req.headers['user-agent'] || ''));
+      return res.status(200).json({ ok: true });
+    }
+    if (route === 'push/unsubscribe' && req.method === 'POST') {
+      const body = isRecordPayload(req.body) ? req.body : {};
+      if (typeof body.endpoint === 'string') await removeSubscription(db, body.endpoint);
+      return res.status(200).json({ ok: true });
+    }
+    if (route === 'push/test' && req.method === 'POST') {
+      const result = await sendToAll(db, { title: 'Notifications are on', body: 'New form submissions will show up here.', url: '/', tag: 'test' }, admin.uid);
+      return res.status(200).json({ ok: true, ...result });
+    }
 
     if (route === 'backup') {
       if (req.method === 'GET') {

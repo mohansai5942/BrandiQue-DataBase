@@ -13,6 +13,8 @@ export function normalizeOrigin(value: string): string {
 export function getAllowedOrigins(environment: Record<string, string | undefined>): Set<string> {
   const values = [
     PRODUCTION_DASHBOARD_ORIGIN,
+    'https://brandique.in',
+    'https://www.brandique.in',
     environment.DASHBOARD_ORIGIN || '',
     ...(environment.ALLOWED_ORIGINS || '').split(','),
     environment.VERCEL_URL || '',
