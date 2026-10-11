@@ -4,7 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { FieldPath, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { authorizeAdminToken } from './admin-auth.js';
 import { getCorsHeaders, getErrorMessage, getErrorStatus, isRecordPayload } from './security.js';
-import { NOTIFY_COLLECTIONS, getVapid, notifySubmission, parseSubscription, removeSubscription, saveSubscription, sendToAll, type NotifyCollection } from './push.js';
+import { NOTIFY_COLLECTIONS, getVapid, notifySubmission, parseSubscription, removeSubscription, saveSubscription, sendToAll, type NotifyCollection } from './_push.js';
 import { isDashboardCollection, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload } from './validation.js';
 
 const MAX_DOC_BYTES = 220 * 1024;
@@ -109,22 +109,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const admin = await requireAdmin(req);
     const db = getFirestore(getApp());
 
-    if (route === 'push/public-key' && req.method === 'GET') {
+    if (route === 'push-public-key' && req.method === 'GET') {
       return res.status(200).json({ ok: true, publicKey: (await getVapid(db)).publicKey });
     }
-    if (route === 'push/subscribe' && req.method === 'POST') {
+    if (route === 'push-subscribe' && req.method === 'POST') {
       const body = isRecordPayload(req.body) ? req.body : {};
       const sub = parseSubscription(body.subscription);
       if (!sub) return sendError(res, 400, 'Invalid push subscription.');
       await saveSubscription(db, sub, admin, String(req.headers['user-agent'] || ''));
       return res.status(200).json({ ok: true });
     }
-    if (route === 'push/unsubscribe' && req.method === 'POST') {
+    if (route === 'push-unsubscribe' && req.method === 'POST') {
       const body = isRecordPayload(req.body) ? req.body : {};
       if (typeof body.endpoint === 'string') await removeSubscription(db, body.endpoint);
       return res.status(200).json({ ok: true });
     }
-    if (route === 'push/test' && req.method === 'POST') {
+    if (route === 'push-test' && req.method === 'POST') {
       const result = await sendToAll(db, { title: 'Notifications are on', body: 'New form submissions will show up here.', url: '/', tag: 'test' }, admin.uid);
       return res.status(200).json({ ok: true, ...result });
     }

@@ -46,6 +46,10 @@ function urlBase64ToUint8Array(base64: string) {
   return Uint8Array.from(raw, char => char.charCodeAt(0));
 }
 
+async function apiError(res: Response, fallback: string) {
+  try { const data = await res.json() as { error?: string }; return data.error ? `${fallback} ${data.error}` : `${fallback} (HTTP ${res.status})`; } catch { return `${fallback} (HTTP ${res.status})`; }
+}
+
 export type PushState = 'unsupported' | 'default' | 'granted' | 'denied' | 'subscribed';
 
 export async function currentPushState(): Promise<PushState> {
@@ -65,8 +69,8 @@ export async function enablePush(getToken: () => Promise<string>): Promise<PushS
   const reg = await navigator.serviceWorker.register('/sw.js');
   await navigator.serviceWorker.ready;
   const token = await getToken();
-  const keyRes = await fetch('/api/push/public-key', { headers: { Authorization: `Bearer ${token}` } });
-  if (!keyRes.ok) throw new Error('Could not load the notification key.');
+  const keyRes = await fetch('/api/push-public-key', { headers: { Authorization: `Bearer ${token}` } });
+  if (!keyRes.ok) throw new Error(await apiError(keyRes, 'Could not load the notification key.'));
   const { publicKey } = await keyRes.json() as { publicKey: string };
   let sub = await reg.pushManager.getSubscription();
   if (sub) {
@@ -74,18 +78,18 @@ export async function enablePush(getToken: () => Promise<string>): Promise<PushS
     if (existingKey && existingKey !== publicKey) { await sub.unsubscribe(); sub = null; }
   }
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
-  const save = await fetch('/api/push/subscribe', {
+  const save = await fetch('/api/push-subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ subscription: sub.toJSON() }),
   });
-  if (!save.ok) throw new Error('Could not save this device for notifications.');
+  if (!save.ok) throw new Error(await apiError(save, 'Could not save this device for notifications.'));
   return 'subscribed';
 }
 
 export async function sendTestPush(getToken: () => Promise<string>) {
   const token = await getToken();
-  await fetch('/api/push/test', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+  await fetch('/api/push-test', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
 }
 
 /** Admin avatar comes from Firestore (public, read-only URL) so it shows on every device. */
