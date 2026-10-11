@@ -38,7 +38,11 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
+  let target = self.location.origin + '/';
+  try {
+    const url = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin);
+    if (url.origin === self.location.origin) target = url.href; // never open off-site links from a push
+  } catch { /* keep the dashboard root */ }
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
     for (const client of list) {
       if (client.url.startsWith(self.location.origin)) { client.navigate(target).catch(() => undefined); return client.focus(); }

@@ -109,7 +109,8 @@ export async function enablePush(getToken: () => Promise<string>): Promise<PushS
 
 export async function sendTestPush(getToken: () => Promise<string>) {
   const token = await getToken();
-  await fetch('/api/push-test', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch('/api/push-test', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(await apiError(res, 'Test notification failed.'));
 }
 
 /** Admin avatar comes from Firestore (public, read-only URL) so it shows on every device. */

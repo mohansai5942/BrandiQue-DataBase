@@ -8,7 +8,7 @@ import {
 import { EmailAuthProvider, onAuthStateChanged, reload, reauthenticateWithCredential, sendEmailVerification, signInWithEmailAndPassword, signOut, updateEmail, updatePassword, User as FirebaseUser } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, firebaseConfigured, storage } from './firebase';
-import { getMessageClassification, isRecordPayload } from '../api/security';
+import { getMessageClassification, isRecordPayload } from '../api/_security';
 import { WorkflowCanvas } from './WorkflowCanvas';
 import { currentPushState, enablePush, isIos, isStandalone, sendTestPush, useAdminAvatar, useInstallPrompt, type PushState } from './pwa';
 
@@ -51,6 +51,28 @@ function downloadFile(filename: string, content: string, type: string) {
   link.href = url; link.download = filename; link.click();
   URL.revokeObjectURL(url);
 }
+/** Only http(s) URLs may become clickable links; anything else (javascript:, data:, …) renders as text. */
+function safeHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : undefined;
+  } catch { return undefined; }
+}
+function mailtoHref(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const email = value.trim();
+  // No ?, &, #, comma or ; so a visitor-supplied address cannot add cc/bcc/subject/body to the mailto: link.
+  return /^[^\s@<>"'()?&#,;:/\\]+@[^\s@<>"'()?&#,;:/\\]+\.[^\s@<>"'()?&#,;:/\\]+$/.test(email) && email.length <= 254 ? `mailto:${email}` : undefined;
+}
+function telHref(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const raw = String(value).trim();
+  if (!/^[+\d\s().-]{5,32}$/.test(raw)) return undefined;
+  const digits = raw.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '');
+  return digits.replace(/\D/g, '').length >= 5 ? `tel:${digits}` : undefined;
+}
+type Notify = (message: string, kind?: 'success' | 'error') => void;
 function safeFilename(value: string) { return value.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'records'; }
 
 async function apiRequest<T>(user: FirebaseUser, url: string, init?: RequestInit): Promise<T> {
@@ -70,7 +92,7 @@ async function apiRequest<T>(user: FirebaseUser, url: string, init?: RequestInit
   return body as T;
 }
 
-function AppHelper({ user, notify }: { user: FirebaseUser; notify: (message: string) => void }) {
+function AppHelper({ user, notify }: { user: FirebaseUser; notify: Notify }) {
   const { canInstall, installed, install, iosHint } = useInstallPrompt();
   const [push, setPush] = useState<PushState | 'loading'>('loading');
   const [busy, setBusy] = useState(false);
@@ -83,9 +105,9 @@ function AppHelper({ user, notify }: { user: FirebaseUser; notify: (message: str
     try {
       const state = await enablePush(() => user.getIdToken());
       setPush(state);
-      if (state === 'subscribed') { notify('Notifications on. Every new form submission will reach this device.'); void sendTestPush(() => user.getIdToken()); }
-      else if (state === 'denied') notify('Notifications are blocked. Allow them in your phone settings for this app.');
-    } catch (e) { notify(e instanceof Error ? e.message : 'Could not turn on notifications.'); }
+      if (state === 'subscribed') { notify('Notifications on. Every new form submission will reach this device.'); void sendTestPush(() => user.getIdToken()).catch(() => notify('Notifications are on, but the test notification could not be sent.', 'error')); }
+      else if (state === 'denied') notify('Notifications are blocked. Allow them in your phone settings for this app.', 'error');
+    } catch (e) { notify(e instanceof Error ? e.message : 'Could not turn on notifications.', 'error'); }
     finally { setBusy(false); }
   }
   const askPush = push === 'default' || push === 'granted';
@@ -152,7 +174,7 @@ function LoginScreen() {
 
 
 function AdminSecurityModal({ user, avatarUrl, onAvatarSaved, onClose, notify }: {
-  user: FirebaseUser; avatarUrl: string; onAvatarSaved: (url: string) => void; onClose: () => void; notify: (message: string) => void;
+  user: FirebaseUser; avatarUrl: string; onAvatarSaved: (url: string) => void; onClose: () => void; notify: Notify;
 }) {
   const [tab, setTab] = useState<'avatar' | 'id' | 'password'>('avatar');
   const [imageUrl, setImageUrl] = useState(avatarUrl);
@@ -410,7 +432,7 @@ function RecordEditor({ section, initial, onClose, onSave, busy }: {
         <div className="live-preview-heading"><span><Activity size={15}/> SIDE PREVIEW PANEL</span><span className="live-pill">Live Updates</span></div>
         {section.id === 'projects' ? <>
           <div className="preview-tabs"><button type="button" className={mediaTab === 'images' ? 'active' : ''} onClick={() => setMediaTab('images')}><ImagePlus size={13}/> Images ({projectImages.length})</button><button type="button" className={mediaTab === 'videos' ? 'active' : ''} onClick={() => setMediaTab('videos')}><Film size={13}/> Videos ({projectVideos.length})</button><button type="button" className={mediaTab === 'link' ? 'active' : ''} onClick={() => setMediaTab('link')}><Globe2 size={13}/> Link</button></div>
-          <div className="project-preview-media">{mediaTab === 'images' ? projectImages[0] ? <img src={projectImages[0]} alt="Project live preview"/> : <div className="preview-placeholder"><ImagePlus size={28}/><strong>No project image yet</strong><small>Add a URL or upload an image</small></div> : mediaTab === 'videos' ? projectVideos[0] ? <video src={projectVideos[0]} controls preload="metadata" aria-label="Project video preview"/> : <div className="preview-placeholder"><Film size={28}/><strong>No project video yet</strong><small>Add a URL or upload a video</small></div> : fields.link ? <a className="preview-link-card" href={String(fields.link)} target="_blank" rel="noreferrer"><ExternalLink size={20}/><strong>Open project link</strong><span>{String(fields.link)}</span></a> : <div className="preview-placeholder"><Globe2 size={28}/><strong>No external link</strong><small>Add an action URL to preview it here</small></div>}</div>
+          <div className="project-preview-media">{mediaTab === 'images' ? projectImages[0] ? <img src={projectImages[0]} alt="Project live preview"/> : <div className="preview-placeholder"><ImagePlus size={28}/><strong>No project image yet</strong><small>Add a URL or upload an image</small></div> : mediaTab === 'videos' ? projectVideos[0] ? <video src={projectVideos[0]} controls preload="metadata" aria-label="Project video preview"/> : <div className="preview-placeholder"><Film size={28}/><strong>No project video yet</strong><small>Add a URL or upload a video</small></div> : safeHttpUrl(fields.link) ? <a className="preview-link-card" href={safeHttpUrl(fields.link)} target="_blank" rel="noopener noreferrer"><ExternalLink size={20}/><strong>Open project link</strong><span>{String(fields.link)}</span></a> : <div className="preview-placeholder"><Globe2 size={28}/><strong>No external link</strong><small>Add an action URL to preview it here</small></div>}</div>
           <div className="preview-section-label">WEBSITE SHOWCASE CARD MOCKUP</div>
           <div className="preview-project-copy"><span className="preview-category">{String(fields.category || 'CATEGORY NAME')}</span><span className="preview-type">{String(fields.type || 'main').toUpperCase()}</span><h3>{String(fields.title || 'Project title placeholder')}</h3><p>{String(fields.desc || 'Project description will appear here as you type…')}</p><div className="preview-tags">{(Array.isArray(fields.tags) ? fields.tags : String(fields.tags || '').split(',')).filter(Boolean).slice(0,6).map((tag,i)=><span key={i}>{String(tag).trim()}</span>)}</div>{Boolean(fields.link) && <div className="preview-link"><Globe2 size={13}/>{String(fields.link)}</div>}</div>
         </> : <>
@@ -432,7 +454,7 @@ function ProjectDetailDialog({ record, onClose }: { record: RecordValue; onClose
     <section className="project-detail-modal" aria-label="Project preview">
       <header><div><span className="eyebrow">PROJECT SHOWCASE PREVIEW</span><h2>{String(record.title || 'Untitled project')}</h2></div><button className="icon-btn" onClick={onClose} aria-label="Close project preview"><X size={18}/></button></header>
       {images[0] && <img className="project-detail-hero" src={images[0]} alt={String(record.title || 'Project')} />}
-      <div className="project-detail-copy"><span className="preview-category">{String(record.category || 'PROJECT')}</span><p>{String(record.desc || record.description || 'No description provided.')}</p><div className="preview-tags">{(Array.isArray(record.tags) ? record.tags : []).map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}</div>{Boolean(record.link) && <a className="secondary" href={String(record.link)} target="_blank" rel="noreferrer"><ExternalLink size={14}/> Open project link</a>}</div>
+      <div className="project-detail-copy"><span className="preview-category">{String(record.category || 'PROJECT')}</span><p>{String(record.desc || record.description || 'No description provided.')}</p><div className="preview-tags">{(Array.isArray(record.tags) ? record.tags : []).map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}</div>{Boolean(safeHttpUrl(record.link)) && <a className="secondary" href={safeHttpUrl(record.link)} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/> Open project link</a>}</div>
       {videos.length > 0 && <div className="project-detail-videos">{videos.map((url, index) => <video key={`${url}-${index}`} src={url} controls preload="metadata" aria-label={`Project video ${index + 1}`}/>)}</div>}
     </section>
   </div>;
@@ -443,7 +465,7 @@ function WorkflowDetailDialog({ record, onClose, onOpenEnquiries }: { record: Re
   return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="workflow-detail-modal">
     <header><div><span className="eyebrow">N8N WORKFLOW PREVIEW</span><h2>{getSummary(record)}</h2></div><button className="icon-btn" onClick={onClose} aria-label="Close workflow preview"><X size={18}/></button></header>
     <WorkflowCanvas value={record.workflowJson} />
-    <div className="workflow-detail-copy"><span className="workflow-category-pill">{String(record.category || 'Automation')}</span><p>{String(record.desc || record.description || 'No workflow description provided.')}</p><div className="preview-tags">{tags.map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}</div><div className="workflow-detail-actions">{Boolean(record.testWorkflowUrl) && <a className="secondary" href={String(record.testWorkflowUrl)} target="_blank" rel="noreferrer"><ExternalLink size={14}/> Test workflow</a>}<span>{record.allowClientRequest ? 'Client inquiry form enabled' : 'Client inquiry form disabled'}</span><button className="secondary" onClick={onOpenEnquiries}><Users size={14}/> View client enquiries</button></div></div>
+    <div className="workflow-detail-copy"><span className="workflow-category-pill">{String(record.category || 'Automation')}</span><p>{String(record.desc || record.description || 'No workflow description provided.')}</p><div className="preview-tags">{tags.map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}</div><div className="workflow-detail-actions">{Boolean(safeHttpUrl(record.testWorkflowUrl)) && <a className="secondary" href={safeHttpUrl(record.testWorkflowUrl)} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/> Test workflow</a>}<span>{record.allowClientRequest ? 'Client inquiry form enabled' : 'Client inquiry form disabled'}</span><button className="secondary" onClick={onOpenEnquiries}><Users size={14}/> View client enquiries</button></div></div>
   </section></div>;
 }
 
@@ -464,7 +486,7 @@ export default function App() {
   const [editor, setEditor] = useState<RecordValue | null | 'new'>(null);
   const [viewingProject, setViewingProject] = useState<RecordValue | null>(null);
   const [viewingWorkflow, setViewingWorkflow] = useState<RecordValue | null>(null);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ message: string; kind: 'success' | 'error' } | null>(null);
   const [showSecurity, setShowSecurity] = useState(false);
   const [avatarUrl, setAvatarUrl] = useAdminAvatar();
   const [apiStatus, setApiStatus] = useState<'checking' | 'ok' | 'error'>('checking');
@@ -474,7 +496,10 @@ export default function App() {
     if (!firebaseConfigured || !auth) { setAuthLoading(false); return; }
     return onAuthStateChanged(auth, next => { setUser(next); setAuthLoading(false); });
   }, []);
-  const notify = useCallback((message: string) => { setToast(message); window.setTimeout(() => setToast(''), 3600); }, []);
+  const notify = useCallback<Notify>((message, kind = 'success') => {
+    setToast({ message, kind });
+    window.setTimeout(() => setToast(current => (current && current.message === message ? null : current)), kind === 'error' ? 6000 : 3600);
+  }, []);
 
   const loadRecords = useCallback(async (collectionName: CollectionName, who = user) => {
     if (!who) return;
@@ -485,7 +510,7 @@ export default function App() {
       setCounts(old => ({ ...old, [collectionName]: payload.returned ?? payload.records?.length ?? 0 }));
       setApiStatus('ok');
     } catch (e) {
-      setRecords([]); setApiStatus('error'); notify(e instanceof Error ? e.message : 'Could not load records.');
+      setRecords([]); setApiStatus('error'); notify(e instanceof Error ? e.message : 'Could not load records.', 'error');
     } finally { setLoading(false); }
   }, [user, notify]);
 
@@ -555,7 +580,7 @@ export default function App() {
       if (id) await apiRequest(user, `/api/data?collection=${encodeURIComponent(active)}&id=${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(value) });
       else await apiRequest(user, `/api/data?collection=${encodeURIComponent(active)}`, { method: 'POST', body: JSON.stringify(value) });
       setEditor(null); notify(id ? 'Record updated successfully.' : 'Record created successfully.'); await loadRecords(active, user);
-    } catch (e) { notify(e instanceof Error ? e.message : 'Save failed.'); }
+    } catch (e) { notify(e instanceof Error ? e.message : 'Save failed.', 'error'); }
     finally { setBusy(false); }
   }
 
@@ -565,7 +590,7 @@ export default function App() {
     try {
       await apiRequest(user, `/api/data?collection=${encodeURIComponent(active)}&id=${encodeURIComponent(record.id)}`, { method: 'DELETE' });
       notify('Record moved to recycle bin.'); await loadRecords(active, user);
-    } catch (e) { notify(e instanceof Error ? e.message : 'Delete failed.'); }
+    } catch (e) { notify(e instanceof Error ? e.message : 'Delete failed.', 'error'); }
     finally { setBusy(false); }
   }
 
@@ -585,7 +610,7 @@ export default function App() {
       notify('Record permanently deleted from the database.');
       await loadRecords(active, user);
     } catch (e) {
-      notify(e instanceof Error ? `Permanent delete failed: ${e.message}` : 'Permanent delete failed.');
+      notify(e instanceof Error ? `Permanent delete failed: ${e.message}` : 'Permanent delete failed.', 'error');
     } finally { setBusy(false); }
   }
 
@@ -597,11 +622,12 @@ export default function App() {
       const value = { ...recordFields, isDeleted: false, deletedAt: null };
       await apiRequest(user, `/api/data?collection=${encodeURIComponent(active)}&id=${encodeURIComponent(record.id)}`, { method: 'PATCH', body: JSON.stringify(value) });
       notify('Record restored.'); await loadRecords(active, user);
-    } catch (e) { notify(e instanceof Error ? e.message : 'Restore failed.'); }
+    } catch (e) { notify(e instanceof Error ? e.message : 'Restore failed.', 'error'); }
     finally { setBusy(false); }
   }
 
   function exportRecords(format: 'json' | 'csv') {
+    try {
     const exported: Record<string, unknown>[] = visible.map(({ id, ...rest }) => ({ id, ...rest }));
     if (format === 'json') downloadFile(`brandique-${safeFilename(active)}.json`, JSON.stringify(exported, null, 2), 'application/json');
     else {
@@ -611,6 +637,7 @@ export default function App() {
       downloadFile(`brandique-${safeFilename(active)}.csv`, csv, 'text/csv;charset=utf-8');
     }
     notify(`Exported ${exported.length} records.`);
+    } catch (e) { notify(e instanceof Error ? `Export failed: ${e.message}` : 'Export failed.', 'error'); }
   }
 
   async function exportAllData() {
@@ -635,7 +662,7 @@ export default function App() {
       downloadFile(`brandique-firestore-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 2), 'application/json');
       const total = Object.values(collections).reduce((sum, item) => sum + item.count, 0);
       notify(`Full backup exported: ${total} documents across ${SECTIONS.length} collections.`);
-    } catch (e) { notify(e instanceof Error ? e.message : 'Full export failed.'); }
+    } catch (e) { notify(e instanceof Error ? e.message : 'Full export failed.', 'error'); }
     finally { setBusy(false); }
   }
 
@@ -659,7 +686,7 @@ export default function App() {
       setRecords([]);
       await loadRecords(active, user);
     } catch (e) {
-      notify(e instanceof Error ? `Delete failed: ${e.message}. Check the database before retrying.` : 'Delete failed. Check the database before retrying.');
+      notify(e instanceof Error ? `Delete failed: ${e.message}. Check the database before retrying.` : 'Delete failed. Check the database before retrying.', 'error');
     } finally { setBusy(false); }
   }
 
@@ -667,7 +694,7 @@ export default function App() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || !user || busy) return;
-    if (file.size > 50 * 1024 * 1024) { notify('Choose a JSON backup file smaller than 50 MB.'); return; }
+    if (file.size > 50 * 1024 * 1024) { notify('Choose a JSON backup file smaller than 50 MB.', 'error'); return; }
     setBusy(true);
     try {
       const parsed: unknown = JSON.parse(await file.text());
@@ -693,7 +720,7 @@ export default function App() {
       }
       notify(`Import complete: ${imported} documents written with their original IDs.`);
       await loadRecords(active, user);
-    } catch (e) { notify(e instanceof Error ? `Import stopped: ${e.message}. Earlier batches may already have been written; review the database before retrying.` : 'Import failed. Review the database before retrying.'); }
+    } catch (e) { notify(e instanceof Error ? `Import stopped: ${e.message}. Earlier batches may already have been written; review the database before retrying.` : 'Import failed. Review the database before retrying.', 'error'); }
     finally { setBusy(false); }
   }
 
@@ -703,7 +730,7 @@ export default function App() {
       await sendEmailVerification(user);
       notify('Verification email sent. Open the newest email and click its verification link, then sign out and sign in again.');
     } catch (e) {
-      notify(e instanceof Error ? e.message : 'Could not send verification email.');
+      notify(e instanceof Error ? e.message : 'Could not send verification email.', 'error');
     }
   }
 
@@ -718,10 +745,10 @@ export default function App() {
         await refreshed.getIdToken(true);
         await loadRecords(active, refreshed);
       } else {
-        notify('Firebase still reports this email as unverified. Open the newest verification email link first.');
+        notify('Firebase still reports this email as unverified. Open the newest verification email link first.', 'error');
       }
     } catch (e) {
-      notify(e instanceof Error ? e.message : 'Could not refresh verification status.');
+      notify(e instanceof Error ? e.message : 'Could not refresh verification status.', 'error');
     }
   }
 
@@ -779,7 +806,7 @@ export default function App() {
           </div> : active === 'n8n_projects' && !showDeleted ? <div className="workflow-directory">
             <div className="workflow-category-tabs">{['all', ...workflowCategories].map(category => { const label = category === 'all' ? 'All workflows' : category; const categoryCount = category === 'all' ? records.filter(record => !record.isDeleted).length : records.filter(record => !record.isDeleted && String(record.category || 'Other') === category).length; return <button type="button" className={`workflow-category-pill workflow-filter${workflowCategory === category ? ' selected' : ''}`} key={category} onClick={() => setWorkflowCategory(category)}>{label}<span>{categoryCount}</span></button>; })}</div>
             <div className="workflow-grid">{visible.map(record => <article className="workflow-card" key={record.id}><WorkflowCanvas value={record.workflowJson} compact/><div className="workflow-card-copy"><span className="workflow-category-pill">{String(record.category || 'Automation')}</span><h3>{getSummary(record)}</h3><p>{String(record.desc || record.description || 'Workflow description not added.')}</p><div className="project-card-tags">{(Array.isArray(record.tags) ? record.tags : []).slice(0, 5).map((tag, index) => <span key={`${String(tag)}-${index}`}>{String(tag)}</span>)}</div><div className="workflow-card-meta"><span>{Number(record.nodeCount) || 0} nodes</span><span>{record.allowClientRequest ? 'Client form on' : 'Client form off'}</span></div><div className="project-card-actions"><button type="button" className="table-action" onClick={() => setViewingWorkflow(record)}><Eye size={14}/> Preview</button><button type="button" className="table-action" onClick={() => setEditor(record)}><Pencil size={14}/> Edit</button><button type="button" className="table-action danger" onClick={() => void softDelete(record)} disabled={busy} title="Move to recycle bin"><Trash2 size={14}/></button></div></div></article>)}</div>
-          </div> : (active === 'messages' || active === 'n8n_project_forms') && !showDeleted ? <div className="lead-directory">{visible.map(record => { const details = isRecordPayload(record.serviceDetails) ? Object.entries(record.serviceDetails) : []; const classification = active === 'n8n_project_forms' ? 'contact' : getMessageClassification(record); const badge = active === 'n8n_project_forms' ? String(record.projectTitle || 'Automation enquiry') : classification === 'service' ? String(record.service || 'Service enquiry') : classification === 'contact' ? 'Contact form' : 'Legacy record'; const otherFields = Object.entries(record).filter(([key, value]) => !['id', 'name', 'email', 'phone', 'service', 'budget', 'message', 'serviceDetails', 'source', 'createdAt', 'updatedAt', 'isDeleted', 'deletedAt'].includes(key) && value !== '' && value !== null && value !== undefined); return <article className="lead-card" key={record.id}><div className="lead-card-heading"><div><span className={`lead-kind ${classification}`}>{badge}</span><h3>{String(record.name || record.email || 'Unknown contact')}</h3></div><span className="timestamp">{pretty(record.createdAt || record.updatedAt)}</span></div><div className="lead-contact-grid">{[['Email', record.email], ['Phone', record.phone], ['Budget', record.budget], ['Service', record.service]].filter(([, value]) => value !== undefined && value !== '').map(([label, value]) => <div key={String(label)}><small>{String(label)}</small><strong>{pretty(value)}</strong></div>)}</div>{Boolean(record.message) && <div className="lead-message"><small>MESSAGE / REQUIREMENTS</small><p>{String(record.message)}</p></div>}{details.length > 0 && <div className="lead-details"><small>SERVICE DETAILS</small><dl>{details.map(([key, value]) => <div key={key}><dt>{titleFromKey(key)}</dt><dd>{pretty(value)}</dd></div>)}</dl></div>}{otherFields.length > 0 && <details className="lead-extra"><summary>Additional submitted fields ({otherFields.length})</summary><dl>{otherFields.map(([key, value]) => <div key={key}><dt>{titleFromKey(key)}</dt><dd>{pretty(value)}</dd></div>)}</dl></details>}<div className="lead-card-actions"><span className="subtle">ID: {record.id}</span><button className="table-action" onClick={() => setEditor(record)}><Pencil size={14}/> Edit</button><button className="table-action danger" onClick={() => void softDelete(record)} disabled={busy}><Trash2 size={14}/> Recycle</button></div></article>; })}</div> : <div className="record-table-wrap"><table className="record-table"><thead><tr><th>RECORD</th><th>PREVIEW</th><th>UPDATED / CREATED</th><th>STATUS</th><th className="align-right">ACTIONS</th></tr></thead><tbody>{visible.map(record => {
+          </div> : (active === 'messages' || active === 'n8n_project_forms') && !showDeleted ? <div className="lead-directory">{visible.map(record => { const details = isRecordPayload(record.serviceDetails) ? Object.entries(record.serviceDetails) : []; const classification = active === 'n8n_project_forms' ? 'contact' : getMessageClassification(record); const badge = active === 'n8n_project_forms' ? String(record.projectTitle || 'Automation enquiry') : classification === 'service' ? String(record.service || 'Service enquiry') : classification === 'contact' ? 'Contact form' : 'Legacy record'; const otherFields = Object.entries(record).filter(([key, value]) => !['id', 'name', 'email', 'phone', 'service', 'budget', 'message', 'serviceDetails', 'source', 'createdAt', 'updatedAt', 'isDeleted', 'deletedAt'].includes(key) && value !== '' && value !== null && value !== undefined); return <article className="lead-card" key={record.id}><div className="lead-card-heading"><div><span className={`lead-kind ${classification}`}>{badge}</span><h3>{String(record.name || record.email || 'Unknown contact')}</h3></div><span className="timestamp">{pretty(record.createdAt || record.updatedAt)}</span></div><div className="lead-contact-grid">{[['Email', record.email, mailtoHref(record.email)], ['Phone', record.phone, telHref(record.phone)], ['Budget', record.budget, undefined], ['Service', record.service, undefined]].filter(([, value]) => value !== undefined && value !== '').map(([label, value, href]) => <div key={String(label)}><small>{String(label)}</small><strong>{href ? <a className="lead-contact-link" href={String(href)}>{pretty(value)}</a> : pretty(value)}</strong></div>)}</div>{Boolean(record.message) && <div className="lead-message"><small>MESSAGE / REQUIREMENTS</small><p>{String(record.message)}</p></div>}{details.length > 0 && <div className="lead-details"><small>SERVICE DETAILS</small><dl>{details.map(([key, value]) => <div key={key}><dt>{titleFromKey(key)}</dt><dd>{pretty(value)}</dd></div>)}</dl></div>}{otherFields.length > 0 && <details className="lead-extra"><summary>Additional submitted fields ({otherFields.length})</summary><dl>{otherFields.map(([key, value]) => <div key={key}><dt>{titleFromKey(key)}</dt><dd>{pretty(value)}</dd></div>)}</dl></details>}<div className="lead-card-actions"><span className="subtle">ID: {record.id}</span><button className="table-action" onClick={() => setEditor(record)}><Pencil size={14}/> Edit</button><button className="table-action danger" onClick={() => void softDelete(record)} disabled={busy}><Trash2 size={14}/> Recycle</button></div></article>; })}</div> : <div className="record-table-wrap"><table className="record-table"><thead><tr><th>RECORD</th><th>PREVIEW</th><th>UPDATED / CREATED</th><th>STATUS</th><th className="align-right">ACTIONS</th></tr></thead><tbody>{visible.map(record => {
             const summary = getSummary(record);
             const detail = String(record.email || record.category || record.service || record.url || record.desc || record.message || record.phone || '');
             const timestamp = pretty(record.updatedAt || record.createdAt || record.deletedAt);
@@ -793,6 +820,6 @@ export default function App() {
     {viewingProject && <ProjectDetailDialog record={viewingProject} onClose={() => setViewingProject(null)}/>}
     {viewingWorkflow && <WorkflowDetailDialog record={viewingWorkflow} onClose={() => setViewingWorkflow(null)} onOpenEnquiries={() => { setViewingWorkflow(null); setActive('n8n_project_forms'); }}/>}
     {showSecurity && user && <AdminSecurityModal user={user} avatarUrl={avatarUrl} onAvatarSaved={setAvatarUrl} onClose={() => setShowSecurity(false)} notify={notify}/>}
-    {toast && <div className="toast"><Check size={16}/>{toast}</div>}
+    {toast && <div className={toast.kind === 'error' ? 'toast toast-error' : 'toast'} role={toast.kind === 'error' ? 'alert' : 'status'} aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}>{toast.kind === 'error' ? <CircleAlert size={16}/> : <Check size={16}/>}<span>{toast.message}</span></div>}
   </div>;
 }
