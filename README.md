@@ -13,6 +13,21 @@ A standalone, responsive database management dashboard for BrandiQue Web Solutio
 - Project image/video URL entry, Firebase Storage uploads, and live media previews.
 - n8n workflow JSON validation and a node/connection diagram preview.
 
+## Lead notifications (while the dashboard is open)
+
+- The header bell polls the secure server API (`/api/data`) every 20 seconds for the
+  `messages`, `n8n_project_forms`, `projects` and `websites` collections. When a new document
+  appears: an in-app toast fires, a subtle beep plays (WebAudio, mutable in the panel), the
+  bell badge increments, and the event is appended to the notification slide-over panel.
+- With the one-time permission banner accepted, a native OS notification also fires for new leads.
+- Seen-state and per-collection last-seen timestamps live in `localStorage`, so the badge clears
+  when the panel is opened and old documents never re-notify after a reload.
+- Client-side Firestore listeners are intentionally not used: the Firestore rules deny direct
+  browser reads on submissions, so polling the Admin-SDK-backed API keeps the admin email
+  allowlist enforcement intact.
+- Push-when-closed is separate and already exists: `brandique.in` calls `POST /api/notify-submission`
+  after each form submit, delivered via the Web Push subscription in `src/pwa.ts`.
+
 ## Important integration note
 
 Deploying this repository by itself does **not** automatically connect it to the live website. The current public site has its own Firebase client configuration and direct Firestore reads/writes. For edits made here to appear on `brandique.in`, the public site must be migrated to the same Firebase project/database (or its data access must be switched to this API) and tested. That integration is intentionally not performed from this repository, to avoid unexpected changes to the live website.
