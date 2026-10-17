@@ -2,7 +2,7 @@
   "ok": true,
   "format": "brandique-firestore-export",
   "formatVersion": 1,
-  "exportedAt": "Sat 2026-10-17 10:45 PM IST (UTC+05:30)",
+  "exportedAt": "Sat 2026-10-17 11:00 PM IST (UTC+05:30)",
   "projectId": "brandique-web-solutions",
   "collections": {
     "settings": {
@@ -37,6 +37,13 @@
                   "SIP trunking"
                 ],
                 "workflowRunsPerMonth": 0,
+                "chatbotRatePerMessageInr": 0.84,
+                "whatsappRatePerMessageInr": 0.84,
+                "whatsappBroadcastsPerMonth": 0,
+                "supportChannels": [
+                  "Email"
+                ],
+                "supportResponseHours": 24,
                 "mostPopular": false
               },
               {
@@ -57,6 +64,13 @@
                   "Workflow builder (10,000 runs/mo)"
                 ],
                 "workflowRunsPerMonth": 10000,
+                "chatbotRatePerMessageInr": 0.84,
+                "whatsappRatePerMessageInr": 0.84,
+                "whatsappBroadcastsPerMonth": 2000,
+                "supportChannels": [
+                  "Email"
+                ],
+                "supportResponseHours": 24,
                 "mostPopular": true
               },
               {
@@ -77,12 +91,23 @@
                   "Workflow builder (100,000 runs/mo)"
                 ],
                 "workflowRunsPerMonth": 100000,
+                "chatbotRatePerMessageInr": 0.84,
+                "whatsappRatePerMessageInr": 0.84,
+                "whatsappBroadcastsPerMonth": 10000,
+                "supportChannels": [
+                  "Email",
+                  "Slack",
+                  "WhatsApp"
+                ],
+                "supportResponseHours": 12,
                 "mostPopular": false
               }
             ],
             "payAsYouGo": {
               "ratePerMinuteInr": 8.9,
               "minMinutes": 320,
+              "stepMinutes": 10,
+              "maxSliderMinutes": 5000,
               "minTopUpInr": 2848,
               "discountThresholdInr": 7000,
               "discountRatePerMinuteInr": 8.47,
@@ -94,7 +119,132 @@
                 "Voicemail detection"
               ]
             },
-            "updatedAt": "Sat 2026-10-17 10:45 PM IST (UTC+05:30)"
+            "planFeatures": {
+              "Voice AI agents": [
+                true,
+                true,
+                true
+              ],
+              "Call logs": [
+                true,
+                true,
+                true
+              ],
+              "Integrations": [
+                true,
+                true,
+                true
+              ],
+              "Voice cloning": [
+                true,
+                true,
+                true
+              ],
+              "WhatsApp": [
+                true,
+                true,
+                true
+              ],
+              "SIP trunking": [
+                true,
+                true,
+                true
+              ],
+              "Live call monitoring": [
+                false,
+                true,
+                true
+              ],
+              "Voicemail detection": [
+                false,
+                true,
+                true
+              ],
+              "Agent versioning": [
+                false,
+                true,
+                true
+              ],
+              "Recording insights": [
+                false,
+                false,
+                true
+              ],
+              "Knowledge base": [
+                true,
+                true,
+                true
+              ],
+              "Email channel": [
+                false,
+                false,
+                true
+              ],
+              "SMS channel": [
+                false,
+                false,
+                true
+              ]
+            },
+            "faqs": [
+              {
+                "q": "Can I change my plan anytime?",
+                "a": "Yes. Upgrade or downgrade between Starter, Pro and Growth at any time, or move to pay as you go. Changes are prorated and take effect immediately."
+              },
+              {
+                "q": "What happens if I exceed my limits?",
+                "a": "Calls continue from your top-up balance at ₹8.90/min (₹8.47/min + 2% bonus on ₹7,000+ top-ups), or move to a higher plan for a lower rate (Pro ₹7.00/min, Growth ₹6.44/min)."
+              },
+              {
+                "q": "Is there a free trial?",
+                "a": "No free trial; we give a free demo call before you pay."
+              },
+              {
+                "q": "Do you offer enterprise discounts?",
+                "a": "No separate Enterprise plan. For volume above Growth, custom volume pricing on request."
+              },
+              {
+                "q": "What kind of support do you provide?",
+                "a": "Starter and Pro: email, 24-hour response. Growth: email, Slack and WhatsApp, 12-hour response."
+              },
+              {
+                "q": "Can I integrate with my existing systems?",
+                "a": "Yes: CRM, webhooks, Pabbly Connect, Google Calendar, WhatsApp and SIP trunking."
+              },
+              {
+                "q": "How do plan credits and top-ups work?",
+                "a": "The monthly price is prepaid balance for minutes and messages; the plan decides features; top-ups add balance (₹8.47/min + 2% bonus on ₹7,000+) but do not unlock features."
+              },
+              {
+                "q": "Can I use BrandiQue Voice AI without a subscription?",
+                "a": "Yes: pay as you go at ₹8.90/min from 320 minutes (₹2,848) in 10-minute steps; balance carries over."
+              },
+              {
+                "q": "Is there a prompt limit?",
+                "a": "Keep agent prompts under about 10,000–13,000 characters (~3,500 tokens)."
+              },
+              {
+                "q": "What additional fees should I expect?",
+                "a": "₹1,999 one-time setup, 18% GST, ₹0.84 per chatbot/WhatsApp message, Meta template charges billed by Meta; extras such as more numbers or concurrency quoted before approval."
+              },
+              {
+                "q": "How is WhatsApp messaging billed?",
+                "a": "Every outgoing message ₹0.84 flat (agent reply or campaign); incoming free. Broadcasts: Pro 2,000/month, Growth 10,000/month."
+              },
+              {
+                "q": "Do marketing WhatsApp messages cost more than support or utility messages?",
+                "a": "No, the same ₹0.84 for every outgoing message; Meta bills its own template charges separately by category and country."
+              },
+              {
+                "q": "Is GST added to WhatsApp message charges?",
+                "a": "Not per message; 18% GST is charged on the plan or top-up invoice."
+              },
+              {
+                "q": "Are there any other charges for WhatsApp?",
+                "a": "WhatsApp calls use the plan voice rate; outgoing messages ₹0.84; incoming free; no WhatsApp setup or monthly fee beyond the one-time ₹1,999 agent setup."
+              }
+            ],
+            "updatedAt": "Sat 2026-10-17 11:00 PM IST (UTC+05:30)"
           }
         }
       ]
