@@ -2,7 +2,7 @@
   "ok": true,
   "format": "brandique-firestore-export",
   "formatVersion": 1,
-  "exportedAt": "2026-10-17T15:40:00.000Z",
+  "exportedAt": "Sat 2026-10-17 9:35 PM IST (UTC+05:30)",
   "projectId": "brandique-web-solutions",
   "collections": {
     "settings": {
@@ -14,75 +14,55 @@
             "service": "Voice Calling AI Agents",
             "path": "/services/voice-ai-agents",
             "currency": "INR",
-            "agentFee": {
-              "amount": 2099,
-              "periodDays": 30,
-              "includedCreditInr": 500
-            },
+            "pricingModel": "per-connected-minute",
+            "monthlyFeeInr": 0,
+            "setupFeeInr": 0,
             "billing": "Per second, rounded up to 30 seconds, per connected minute; ring time and unanswered calls not billed",
             "plans": [
               {
                 "id": "voice-starter",
                 "name": "Voice Starter",
+                "badge": "Starter",
                 "ratePerMinuteInr": 5,
-                "voiceQuality": "Budget-friendly",
-                "bestFor": "Day-to-day and high-volume reminder calls",
+                "mostPopular": false,
+                "tagline": "Budget-friendly. Mostly used for bulk calling campaigns.",
                 "features": [
-                  "One AI voice agent, live the same day",
-                  "Dedicated +91 calling line (DLT-registered)",
-                  "₹500 calling credit on every hire or renewal",
-                  "Bulk campaigns, up to 20 calls at a time",
-                  "Native Telugu, switching to English mid-call",
-                  "Automatic transcripts and call summaries",
-                  "CRM, webhook and Pabbly Connect integrations",
-                  "Google Calendar booking mid-call",
-                  "WhatsApp confirmations and follow-ups",
-                  "99.9% uptime SLA",
-                  "No setup fee, no lock-in contract"
+                  "Native Multilingual",
+                  "Value Voices",
+                  "Low Latency",
+                  "Budget bulk calling"
                 ]
               },
               {
                 "id": "voice-growth",
                 "name": "Voice Growth",
+                "badge": "Growth",
                 "ratePerMinuteInr": 8,
-                "voiceQuality": "Step up in naturalness",
-                "bestFor": "Great everyday quality",
+                "mostPopular": true,
+                "tagline": "The All-Rounder. High realism for everyday customer interactions and support.",
                 "features": [
-                  "One AI voice agent, live the same day",
-                  "Dedicated +91 calling line (DLT-registered)",
-                  "₹500 calling credit on every hire or renewal",
-                  "Bulk campaigns, up to 20 calls at a time",
-                  "Native Telugu, switching to English mid-call",
-                  "Automatic transcripts and call summaries",
-                  "CRM, webhook and Pabbly Connect integrations",
-                  "Google Calendar booking mid-call",
-                  "WhatsApp confirmations and follow-ups",
-                  "99.9% uptime SLA",
-                  "No setup fee, no lock-in contract"
+                  "Native Multilingual",
+                  "Standard Voices",
+                  "Low Latency",
+                  "The All-Rounder"
                 ]
               },
               {
                 "id": "voice-premium",
                 "name": "Voice Premium",
+                "badge": "Premium",
                 "ratePerMinuteInr": 11,
-                "voiceQuality": "Most lifelike",
-                "bestFor": "Hot new leads, first impressions",
+                "mostPopular": false,
+                "tagline": "Curated native speakers. The most real-like voices from our exclusive library.",
                 "features": [
-                  "One AI voice agent, live the same day",
-                  "Dedicated +91 calling line (DLT-registered)",
-                  "₹500 calling credit on every hire or renewal",
-                  "Bulk campaigns, up to 20 calls at a time",
-                  "Native Telugu, switching to English mid-call",
-                  "Automatic transcripts and call summaries",
-                  "CRM, webhook and Pabbly Connect integrations",
-                  "Google Calendar booking mid-call",
-                  "WhatsApp confirmations and follow-ups",
-                  "99.9% uptime SLA",
-                  "No setup fee, no lock-in contract"
+                  "Native Multilingual",
+                  "Premium Voices",
+                  "Ultra-low Latency",
+                  "Custom integrations"
                 ]
               }
             ],
-            "updatedAt": "2026-10-17T15:40:00.000Z"
+            "updatedAt": "Sat 2026-10-17 9:35 PM IST (UTC+05:30)"
           }
         }
       ]
