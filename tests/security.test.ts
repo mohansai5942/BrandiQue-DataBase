@@ -187,3 +187,17 @@ test('voice plan catalog: monthly Starter ₹2,799 / Pro ₹6,999 / Growth ₹22
   assert.deepEqual(doc.data.planFeatures['Recording insights'], [false, false, true]);
   assert.equal(validateRecordPayload('settings', doc.data, 'create'), null);
 });
+
+test('services catalog: four core services incl. Voice Calling AI Agents, seed matches, no Free plan', async () => {
+  const { SERVICES_CATALOG, servicesCatalogRecord, VOICE_PLANS } = await import('../api/_catalog.ts');
+  assert.deepEqual(SERVICES_CATALOG.map(s => s.service), ['Web Development', 'AI Agents & Automations', 'Graphic Design', 'Voice Calling AI Agents']);
+  for (const s of SERVICES_CATALOG) assert.ok((CORE_SERVICES as readonly string[]).includes(s.service), s.service);
+  const { readFile } = await import('node:fs/promises');
+  const seed = JSON.parse(await readFile(new URL('../seed/services-catalog.json', import.meta.url), 'utf8'));
+  const doc = seed.collections.settings.documents[0];
+  assert.equal(doc.id, 'services-catalog');
+  assert.deepEqual(doc.data, servicesCatalogRecord(doc.data.updatedAt));
+  assert.equal(VOICE_PLANS[0].includes, 'Includes');
+  const voiceSeed = await readFile(new URL('../seed/voice-ai-agents-plans.json', import.meta.url), 'utf8');
+  assert.doesNotMatch(voiceSeed, /Everything in Free/);
+});
