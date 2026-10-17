@@ -1,5 +1,5 @@
 // Voice Calling AI Agents plan catalog (mirrors data/offers.ts + data/services.ts on brandique.in).
-// Pricing is ONLY per connected minute: no monthly, per-agent, subscription or setup fee.
+// Pricing: a ONE-TIME setup fee of ₹1,999, then ONLY per connected minute: no monthly, per-agent or subscription fee.
 // Three voice tiers (Starter / Growth / Premium), each with its own tagline and features.
 // Kept here so the console, seed file and tests share one definition.
 
@@ -12,6 +12,9 @@ export interface VoicePlan {
   features: string[];
   mostPopular: boolean;
 }
+
+/** One-time setup fee for a voice calling agent (INR). Charged once, never monthly. */
+export const VOICE_SETUP_FEE_INR = 1999;
 
 export const VOICE_PLANS: VoicePlan[] = [
   {
@@ -39,7 +42,8 @@ export function voiceServiceRecord(updatedAt: string) {
     currency: 'INR',
     pricingModel: 'per-connected-minute',
     monthlyFeeInr: 0,
-    setupFeeInr: 0,
+    setupFeeInr: VOICE_SETUP_FEE_INR,
+    setupFeeType: 'one-time',
     billing: 'Per second, rounded up to 30 seconds, per connected minute; ring time and unanswered calls not billed',
     plans: VOICE_PLANS.map(plan => ({ ...plan, features: [...plan.features] })),
     updatedAt,

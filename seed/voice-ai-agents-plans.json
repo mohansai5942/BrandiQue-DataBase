@@ -16,7 +16,8 @@
             "currency": "INR",
             "pricingModel": "per-connected-minute",
             "monthlyFeeInr": 0,
-            "setupFeeInr": 0,
+            "setupFeeInr": 1999,
+            "setupFeeType": "one-time",
             "billing": "Per second, rounded up to 30 seconds, per connected minute; ring time and unanswered calls not billed",
             "plans": [
               {

@@ -17,7 +17,7 @@ A standalone, responsive database management dashboard for BrandiQue Web Solutio
 
 Enquiries store the service name as free text in `messages.service` (max 200 characters in the Firestore rules), so a new website service needs no schema change or migration. The core services (`CORE_SERVICES` in `api/_security.ts`: Web Development, AI Agents & Automations, Graphic Design, Voice Calling AI Agents) are always offered in the Contact Form → Services filter, followed by any other service names found in records. Voice enquiries carry `serviceDetails` keys `Voice Goal` and `Voice Languages & Volume`.
 
-Voice Calling AI Agents plans live in `api/_catalog.ts` (billed only per connected minute, no monthly or agent fee: Voice Starter ₹5/min, Voice Growth ₹8/min (most popular), Voice Premium ₹11/min, each with its own tagline and features). `seed/voice-ai-agents-plans.json` is the same record in the console's backup format: **Import Data** writes only `settings/service-voice-ai-agents` (additive; settings documents other than `contact` are server-only under the Firestore rules).
+Voice Calling AI Agents plans live in `api/_catalog.ts` (one-time setup fee ₹1,999 (`setupFeeInr: 1999`, `setupFeeType: 'one-time'`), then billed only per connected minute, no monthly or agent fee: Voice Starter ₹5/min, Voice Growth ₹8/min (most popular), Voice Premium ₹11/min, each with its own tagline and features). `seed/voice-ai-agents-plans.json` is the same record in the console's backup format: **Import Data** writes only `settings/service-voice-ai-agents` (additive; settings documents other than `contact` are server-only under the Firestore rules).
 
 ## Lead notifications (while the dashboard is open)
 

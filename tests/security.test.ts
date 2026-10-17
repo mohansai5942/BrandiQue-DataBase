@@ -155,7 +155,7 @@ test('service filter lists every core service, including Voice Calling AI Agents
   assert.equal(getMessageClassification({ source: 'service', service: 'Voice Calling AI Agents', serviceDetails: { 'Voice Goal': 'Instant Lead Calling' } }), 'service');
 });
 
-test('voice plan catalog: ₹5 / ₹8 / ₹11 per minute only, no monthly/agent fee, seed matches', async () => {
+test('voice plan catalog: ₹1,999 one-time setup + ₹5 / ₹8 / ₹11 per minute, no monthly/agent fee, seed matches', async () => {
   const { VOICE_PLANS, voiceServiceRecord } = await import('../api/_catalog.ts');
   assert.deepEqual(VOICE_PLANS.map(plan => [plan.name, plan.ratePerMinuteInr]), [['Voice Starter', 5], ['Voice Growth', 8], ['Voice Premium', 11]]);
   const { readFile } = await import('node:fs/promises');
@@ -165,6 +165,8 @@ test('voice plan catalog: ₹5 / ₹8 / ₹11 per minute only, no monthly/agent 
   assert.equal(doc.id, 'service-voice-ai-agents');
   assert.deepEqual(doc.data, voiceServiceRecord(doc.data.updatedAt));
   assert.equal(doc.data.monthlyFeeInr, 0);
+  assert.equal(doc.data.setupFeeInr, 1999);
+  assert.equal(doc.data.setupFeeType, 'one-time');
   assert.equal('agentFee' in doc.data, false);
   assert.doesNotMatch(JSON.stringify(seed), /2099|2,099|periodDays|renewal/);
   assert.deepEqual(doc.data.plans.map((plan: { features: string[] }) => plan.features), [
