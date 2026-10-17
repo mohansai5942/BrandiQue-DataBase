@@ -155,8 +155,8 @@ test('service filter lists every core service, including Voice Calling AI Agents
   assert.equal(getMessageClassification({ source: 'service', service: 'Voice Calling AI Agents', serviceDetails: { 'Voice Goal': 'Instant Lead Calling' } }), 'service');
 });
 
-test('voice plan catalog: ₹5 / ₹8 / ₹11 per minute, identical features, seed matches', async () => {
-  const { VOICE_PLANS, VOICE_SHARED_FEATURES, voiceServiceRecord } = await import('../api/_catalog.ts');
+test('voice plan catalog: ₹5 / ₹8 / ₹11 per minute only, no monthly/agent fee, seed matches', async () => {
+  const { VOICE_PLANS, voiceServiceRecord } = await import('../api/_catalog.ts');
   assert.deepEqual(VOICE_PLANS.map(plan => [plan.name, plan.ratePerMinuteInr]), [['Voice Starter', 5], ['Voice Growth', 8], ['Voice Premium', 11]]);
   const { readFile } = await import('node:fs/promises');
   const seed = JSON.parse(await readFile(new URL('../seed/voice-ai-agents-plans.json', import.meta.url), 'utf8'));
@@ -164,6 +164,14 @@ test('voice plan catalog: ₹5 / ₹8 / ₹11 per minute, identical features, se
   const doc = seed.collections.settings.documents[0];
   assert.equal(doc.id, 'service-voice-ai-agents');
   assert.deepEqual(doc.data, voiceServiceRecord(doc.data.updatedAt));
-  for (const plan of doc.data.plans) assert.deepEqual(plan.features, [...VOICE_SHARED_FEATURES]);
+  assert.equal(doc.data.monthlyFeeInr, 0);
+  assert.equal('agentFee' in doc.data, false);
+  assert.doesNotMatch(JSON.stringify(seed), /2099|2,099|periodDays|renewal/);
+  assert.deepEqual(doc.data.plans.map((plan: { features: string[] }) => plan.features), [
+    ['Native Multilingual', 'Value Voices', 'Low Latency', 'Budget bulk calling'],
+    ['Native Multilingual', 'Standard Voices', 'Low Latency', 'The All-Rounder'],
+    ['Native Multilingual', 'Premium Voices', 'Ultra-low Latency', 'Custom integrations'],
+  ]);
+  assert.deepEqual(doc.data.plans.filter((plan: { mostPopular: boolean }) => plan.mostPopular).map((plan: { name: string }) => plan.name), ['Voice Growth']);
   assert.equal(validateRecordPayload('settings', doc.data, 'create'), null);
 });
