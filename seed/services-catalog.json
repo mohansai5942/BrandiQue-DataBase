@@ -1,0 +1,47 @@
+{
+    "ok": true,
+    "format": "brandique-firestore-export",
+    "formatVersion": 1,
+    "exportedAt": "Sat 2026-10-17 11:50 PM IST (UTC+05:30)",
+    "projectId": "brandique-web-solutions",
+    "collections": {
+        "settings": {
+            "count": 1,
+            "documents": [
+                {
+                    "id": "services-catalog",
+                    "data": {
+                        "services": [
+                            {
+                                "id": "web",
+                                "service": "Web Development",
+                                "path": "/web-development",
+                                "startingFrom": "₹9,000"
+                            },
+                            {
+                                "id": "ai",
+                                "service": "AI Agents & Automations",
+                                "path": "/services/ai-automation",
+                                "startingFrom": "₹12,000"
+                            },
+                            {
+                                "id": "design",
+                                "service": "Graphic Design",
+                                "path": "/services/graphic-design",
+                                "startingFrom": "₹4,500"
+                            },
+                            {
+                                "id": "voice",
+                                "service": "Voice Calling AI Agents",
+                                "path": "/services/voice-ai-agents",
+                                "startingFrom": "₹2,799/month (317 mins) or pay as you go from ₹2,848; ₹1,999 one-time setup; + 18% GST"
+                            }
+                        ],
+                        "count": 4,
+                        "updatedAt": "2026-10-17T18:20:00.000Z"
+                    }
+                }
+            ]
+        }
+    }
+}

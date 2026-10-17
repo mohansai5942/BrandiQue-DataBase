@@ -41,7 +41,7 @@ export const VOICE_GST_PERCENT = 18;
 export const VOICE_PLANS: VoicePlan[] = [
   {
     id: 'voice-starter', name: 'Starter', tagline: 'For your first live voice agent.', priceInr: 2799, billingPeriod: 'month',
-    includedMinutes: 317, effectiveRatePerMinuteInr: 8.83, teamMembers: 2, knowledgeBaseMb: 10, includes: 'Everything in Free',
+    includedMinutes: 317, effectiveRatePerMinuteInr: 8.83, teamMembers: 2, knowledgeBaseMb: 10, includes: 'Includes',
     features: ['Voice cloning', 'WhatsApp', 'SIP trunking'], workflowRunsPerMonth: 0, ...usage(0, ['Email'], 24), mostPopular: false,
   },
   {
@@ -124,4 +124,19 @@ export function voiceServiceRecord(updatedAt: string) {
     faqs: VOICE_FAQS.map(f => ({ ...f })),
     updatedAt,
   };
+}
+
+/**
+ * BrandiQue's four core services (mirrors the website's services, nav and enquiry form).
+ * Stored as settings/services-catalog; names match CORE_SERVICES used for lead/enquiry filters.
+ */
+export const SERVICES_CATALOG = [
+  { id: 'web', service: 'Web Development', path: '/web-development', startingFrom: '₹9,000' },
+  { id: 'ai', service: 'AI Agents & Automations', path: '/services/ai-automation', startingFrom: '₹12,000' },
+  { id: 'design', service: 'Graphic Design', path: '/services/graphic-design', startingFrom: '₹4,500' },
+  { id: 'voice', service: 'Voice Calling AI Agents', path: '/services/voice-ai-agents', startingFrom: '₹2,799/month (317 mins) or pay as you go from ₹2,848; ₹1,999 one-time setup; + 18% GST' },
+] as const;
+
+export function servicesCatalogRecord(updatedAt: string) {
+  return { services: SERVICES_CATALOG.map(s => ({ ...s })), count: SERVICES_CATALOG.length, updatedAt };
 }
