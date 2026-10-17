@@ -163,7 +163,11 @@ test('voice plan catalog: monthly Starter ₹2,799 / Pro ₹6,999 / Growth ₹22
   assert.deepEqual(VOICE_PLANS.map(plan => plan.workflowRunsPerMonth), [0, 10000, 100000]);
   assert.equal(VOICE_PAYG.minTopUpInr, Math.round(VOICE_PAYG.minMinutes * VOICE_PAYG.ratePerMinuteInr));
   assert.deepEqual([320, 500, 800].map(n => paygQuote(n).amountInr), [2848, 4450, 7120]);
-  assert.deepEqual(paygQuote(827), { minutes: 827, rate: 8.47, amountInr: 7005, bonusMinutes: 16, totalMinutes: 843, discounted: true });
+  assert.deepEqual(paygQuote(830), { minutes: 830, rate: 8.47, amountInr: 7030, bonusMinutes: 16, totalMinutes: 846, discounted: true });
+  assert.deepEqual([321, 325, 327, 826].map(n => paygQuote(n).minutes), [320, 330, 330, 830]);
+  assert.equal(VOICE_PAYG.stepMinutes, 10);
+  assert.deepEqual(VOICE_PLANS.map(plan => [plan.chatbotRatePerMessageInr, plan.whatsappRatePerMessageInr, plan.whatsappBroadcastsPerMonth, plan.supportChannels.join(', '), plan.supportResponseHours]),
+    [[0.84, 0.84, 0, 'Email', 24], [0.84, 0.84, 2000, 'Email', 24], [0.84, 0.84, 10000, 'Email, Slack, WhatsApp', 12]]);
   const { readFile } = await import('node:fs/promises');
   const seed = JSON.parse(await readFile(new URL('../seed/voice-ai-agents-plans.json', import.meta.url), 'utf8'));
   assert.equal(seed.format, 'brandique-firestore-export');
@@ -177,5 +181,9 @@ test('voice plan catalog: monthly Starter ₹2,799 / Pro ₹6,999 / Growth ₹22
   assert.equal('monthlyFeeInr' in doc.data, false);
   assert.doesNotMatch(JSON.stringify(seed), /ratePerMinuteInr":(5|8|11)[,}]|Premium|2099|2,099|periodDays|renewal/);
   assert.deepEqual(doc.data.plans.filter((plan: { mostPopular: boolean }) => plan.mostPopular).map((plan: { name: string }) => plan.name), ['Pro']);
+  assert.equal(doc.data.faqs.length, 14);
+  assert.ok(doc.data.faqs.some((f: { q: string }) => f.q === 'Is there a free trial?'));
+  assert.doesNotMatch(JSON.stringify(seed), /omni/i);
+  assert.deepEqual(doc.data.planFeatures['Recording insights'], [false, false, true]);
   assert.equal(validateRecordPayload('settings', doc.data, 'create'), null);
 });
