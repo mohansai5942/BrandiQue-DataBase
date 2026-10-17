@@ -16,7 +16,7 @@ const MAX_IMPORT_DOCS_PER_REQUEST = 500;
 const PERMANENT_DELETE_COLLECTIONS = new Set<string>(BACKUP_COLLECTIONS);
 // Firestore auto-IDs are 20 alphanumeric characters; allow a little slack for custom IDs.
 const NOTIFY_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-const notifyLimiter = createRateLimiter(20, 10 * 60 * 1000);
+const notifyLimiter = createRateLimiter(5, 60 * 1000);
 const publicProfileLimiter = createRateLimiter(120, 60 * 1000);
 function restoreBackupTimestamps(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(restoreBackupTimestamps);
@@ -99,7 +99,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Public: the login screen avatar. Returns only the avatar URL, nothing else from settings.
   if (route === 'public-profile' && req.method === 'GET') {
     try {
-      if (!publicProfileLimiter(clientIp(req))) return sendError(res, 429, 'Too many requests.');
+      if (!publicProfileLimiter(clientIp(req))) {
+        res.setHeader('Retry-After', '60');
+        return sendError(res, 429, 'Too many requests.');
+      }
       const snap = await getFirestore(getApp()).collection('settings').limit(20).get();
       const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Record<string, unknown>));
       const pick = docs.find(d => d.id === 'admin-profile' && d.adminAvatarUrl) || docs.find(d => d.id === 'contact' && d.adminAvatarUrl) || docs.find(d => typeof d.adminAvatarUrl === 'string' && d.adminAvatarUrl);
@@ -117,7 +120,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (route === 'notify-submission' && req.method === 'POST') {
     try {
       if (typeof req.body === 'string' && req.body.length > 1024) return sendError(res, 413, 'Request too large.');
-      if (!notifyLimiter(clientIp(req))) return sendError(res, 429, 'Too many requests.');
+      if (!notifyLimiter(clientIp(req))) {
+        res.setHeader('Retry-After', '60');
+        return sendError(res, 429, 'Too many requests.');
+      }
       let body: unknown;
       try { body = parseJsonBody(req.body); } catch { body = null; }
       if (!isRecordPayload(body) || typeof body.collection !== 'string' || typeof body.id !== 'string') return sendError(res, 400, 'Invalid request.');
