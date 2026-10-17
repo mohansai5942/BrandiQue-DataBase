@@ -2,7 +2,7 @@
   "ok": true,
   "format": "brandique-firestore-export",
   "formatVersion": 1,
-  "exportedAt": "Sat 2026-10-17 9:35 PM IST (UTC+05:30)",
+  "exportedAt": "Sat 2026-10-17 10:45 PM IST (UTC+05:30)",
   "projectId": "brandique-web-solutions",
   "collections": {
     "settings": {
@@ -14,56 +14,87 @@
             "service": "Voice Calling AI Agents",
             "path": "/services/voice-ai-agents",
             "currency": "INR",
-            "pricingModel": "per-connected-minute",
-            "monthlyFeeInr": 0,
+            "pricingModel": "monthly-subscription-or-pay-as-you-go",
+            "gstPercent": 18,
             "setupFeeInr": 1999,
             "setupFeeType": "one-time",
-            "billing": "Per second, rounded up to 30 seconds, per connected minute; ring time and unanswered calls not billed",
+            "billing": "Per second, rounded up to 30 seconds, from plan minutes and top-ups; ring time and unanswered calls not billed",
             "plans": [
               {
                 "id": "voice-starter",
-                "name": "Voice Starter",
-                "badge": "Starter",
-                "ratePerMinuteInr": 5,
-                "mostPopular": false,
-                "tagline": "Budget-friendly. Mostly used for bulk calling campaigns.",
+                "name": "Starter",
+                "tagline": "For your first live voice agent.",
+                "priceInr": 2799,
+                "billingPeriod": "month",
+                "includedMinutes": 317,
+                "effectiveRatePerMinuteInr": 8.83,
+                "teamMembers": 2,
+                "knowledgeBaseMb": 10,
+                "includes": "Everything in Free",
                 "features": [
-                  "Native Multilingual",
-                  "Value Voices",
-                  "Low Latency",
-                  "Budget bulk calling"
-                ]
+                  "Voice cloning",
+                  "WhatsApp",
+                  "SIP trunking"
+                ],
+                "workflowRunsPerMonth": 0,
+                "mostPopular": false
+              },
+              {
+                "id": "voice-pro",
+                "name": "Pro",
+                "tagline": "For teams running a live pilot.",
+                "priceInr": 6999,
+                "billingPeriod": "month",
+                "includedMinutes": 1000,
+                "effectiveRatePerMinuteInr": 7,
+                "teamMembers": 5,
+                "knowledgeBaseMb": 50,
+                "includes": "Everything in Starter",
+                "features": [
+                  "Live call monitoring",
+                  "Voicemail detection",
+                  "Agent versioning",
+                  "Workflow builder (10,000 runs/mo)"
+                ],
+                "workflowRunsPerMonth": 10000,
+                "mostPopular": true
               },
               {
                 "id": "voice-growth",
-                "name": "Voice Growth",
-                "badge": "Growth",
-                "ratePerMinuteInr": 8,
-                "mostPopular": true,
-                "tagline": "The All-Rounder. High realism for everyday customer interactions and support.",
+                "name": "Growth",
+                "tagline": "For teams scaling past the pilot.",
+                "priceInr": 22999,
+                "billingPeriod": "month",
+                "includedMinutes": 3571,
+                "effectiveRatePerMinuteInr": 6.44,
+                "teamMembers": 10,
+                "knowledgeBaseMb": 100,
+                "includes": "Everything in Pro",
                 "features": [
-                  "Native Multilingual",
-                  "Standard Voices",
-                  "Low Latency",
-                  "The All-Rounder"
-                ]
-              },
-              {
-                "id": "voice-premium",
-                "name": "Voice Premium",
-                "badge": "Premium",
-                "ratePerMinuteInr": 11,
-                "mostPopular": false,
-                "tagline": "Curated native speakers. The most real-like voices from our exclusive library.",
-                "features": [
-                  "Native Multilingual",
-                  "Premium Voices",
-                  "Ultra-low Latency",
-                  "Custom integrations"
-                ]
+                  "Recording insights",
+                  "Email channel",
+                  "SMS channel",
+                  "Workflow builder (100,000 runs/mo)"
+                ],
+                "workflowRunsPerMonth": 100000,
+                "mostPopular": false
               }
             ],
-            "updatedAt": "Sat 2026-10-17 9:35 PM IST (UTC+05:30)"
+            "payAsYouGo": {
+              "ratePerMinuteInr": 8.9,
+              "minMinutes": 320,
+              "minTopUpInr": 2848,
+              "discountThresholdInr": 7000,
+              "discountRatePerMinuteInr": 8.47,
+              "bonusMinutesPercent": 2,
+              "monthlyPlanOnlyFeatures": [
+                "Voice cloning",
+                "SIP trunking",
+                "WhatsApp",
+                "Voicemail detection"
+              ]
+            },
+            "updatedAt": "Sat 2026-10-17 10:45 PM IST (UTC+05:30)"
           }
         }
       ]
