@@ -1,0 +1,91 @@
+{
+  "ok": true,
+  "format": "brandique-firestore-export",
+  "formatVersion": 1,
+  "exportedAt": "2026-10-17T15:40:00.000Z",
+  "projectId": "brandique-web-solutions",
+  "collections": {
+    "settings": {
+      "count": 1,
+      "documents": [
+        {
+          "id": "service-voice-ai-agents",
+          "data": {
+            "service": "Voice Calling AI Agents",
+            "path": "/services/voice-ai-agents",
+            "currency": "INR",
+            "agentFee": {
+              "amount": 2099,
+              "periodDays": 30,
+              "includedCreditInr": 500
+            },
+            "billing": "Per second, rounded up to 30 seconds, per connected minute; ring time and unanswered calls not billed",
+            "plans": [
+              {
+                "id": "voice-starter",
+                "name": "Voice Starter",
+                "ratePerMinuteInr": 5,
+                "voiceQuality": "Budget-friendly",
+                "bestFor": "Day-to-day and high-volume reminder calls",
+                "features": [
+                  "One AI voice agent, live the same day",
+                  "Dedicated +91 calling line (DLT-registered)",
+                  "₹500 calling credit on every hire or renewal",
+                  "Bulk campaigns, up to 20 calls at a time",
+                  "Native Telugu, switching to English mid-call",
+                  "Automatic transcripts and call summaries",
+                  "CRM, webhook and Pabbly Connect integrations",
+                  "Google Calendar booking mid-call",
+                  "WhatsApp confirmations and follow-ups",
+                  "99.9% uptime SLA",
+                  "No setup fee, no lock-in contract"
+                ]
+              },
+              {
+                "id": "voice-growth",
+                "name": "Voice Growth",
+                "ratePerMinuteInr": 8,
+                "voiceQuality": "Step up in naturalness",
+                "bestFor": "Great everyday quality",
+                "features": [
+                  "One AI voice agent, live the same day",
+                  "Dedicated +91 calling line (DLT-registered)",
+                  "₹500 calling credit on every hire or renewal",
+                  "Bulk campaigns, up to 20 calls at a time",
+                  "Native Telugu, switching to English mid-call",
+                  "Automatic transcripts and call summaries",
+                  "CRM, webhook and Pabbly Connect integrations",
+                  "Google Calendar booking mid-call",
+                  "WhatsApp confirmations and follow-ups",
+                  "99.9% uptime SLA",
+                  "No setup fee, no lock-in contract"
+                ]
+              },
+              {
+                "id": "voice-premium",
+                "name": "Voice Premium",
+                "ratePerMinuteInr": 11,
+                "voiceQuality": "Most lifelike",
+                "bestFor": "Hot new leads, first impressions",
+                "features": [
+                  "One AI voice agent, live the same day",
+                  "Dedicated +91 calling line (DLT-registered)",
+                  "₹500 calling credit on every hire or renewal",
+                  "Bulk campaigns, up to 20 calls at a time",
+                  "Native Telugu, switching to English mid-call",
+                  "Automatic transcripts and call summaries",
+                  "CRM, webhook and Pabbly Connect integrations",
+                  "Google Calendar booking mid-call",
+                  "WhatsApp confirmations and follow-ups",
+                  "99.9% uptime SLA",
+                  "No setup fee, no lock-in contract"
+                ]
+              }
+            ],
+            "updatedAt": "2026-10-17T15:40:00.000Z"
+          }
+        }
+      ]
+    }
+  }
+}
