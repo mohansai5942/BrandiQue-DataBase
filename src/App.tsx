@@ -8,7 +8,7 @@ import {
 import { EmailAuthProvider, onAuthStateChanged, reload, reauthenticateWithCredential, sendEmailVerification, signInWithEmailAndPassword, signOut, updateEmail, updatePassword, User as FirebaseUser } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, firebaseConfigured, storage } from './firebase';
-import { getMessageClassification, isRecordPayload } from '../api/_security';
+import { getMessageClassification, isRecordPayload, mergeServiceCategories } from '../api/_security';
 import { WorkflowCanvas } from './WorkflowCanvas';
 import { currentPushState, enablePush, isIos, isStandalone, sendTestPush, useAdminAvatar, useInstallPrompt, type PushState } from './pwa';
 import { timeAgo, type LeadEvent } from './notifications';
@@ -574,9 +574,9 @@ export default function App() {
     total: Object.values(counts).reduce((total, value) => total + (value || 0), 0),
     leads: counts.messages || 0, projects: counts.projects || 0, automations: counts.n8n_projects || 0
   }), [counts]);
-  const serviceCategories = useMemo(() => Array.from(new Set(records
+  const serviceCategories = useMemo(() => mergeServiceCategories(records
     .filter(record => getMessageClassification(record) === 'service')
-    .map(record => String(record.service || 'Other service')))), [records]);
+    .map(record => String(record.service || 'Other service'))), [records]);
   const workflowCategories = useMemo(() => Array.from(new Set(records
     .filter(record => !record.isDeleted)
     .map(record => String(record.category || 'Other')))), [records]);

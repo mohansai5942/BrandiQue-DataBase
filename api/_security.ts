@@ -63,6 +63,24 @@ export function getCorsHeaders(originHeader: string | undefined, environment: Re
   };
 }
 
+/**
+ * The core services brandique.in sends as the `service` field of enquiries (Contact form and the
+ * service inquiry modal). Mirrors data/offers.ts in the website repo. Used to offer every service
+ * as a dashboard filter even before its first lead arrives; any other value still shows up as-is.
+ */
+export const CORE_SERVICES = [
+  'Web Development',
+  'AI Agents & Automations',
+  'AI Automation & Agents',
+  'Graphic Design',
+  'Voice Calling AI Agents',
+] as const;
+
+/** Service filter options: the core services first, then any other service names found in records. */
+export function mergeServiceCategories(found: string[]): string[] {
+  return Array.from(new Set([...CORE_SERVICES, ...found]));
+}
+
 export function isServiceEnquiry(record: Record<string, unknown>): boolean {
   if (record.source === 'service') return true;
   const details = record.serviceDetails;

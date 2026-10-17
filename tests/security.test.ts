@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createRateLimiter, getAllowedOrigins, getCorsHeaders, getMessageClassification, getPublicErrorMessage, isAllowedOrigin, isRecordPayload, normalizeOrigin } from '../api/_security.ts';
+import { CORE_SERVICES, mergeServiceCategories, createRateLimiter, getAllowedOrigins, getCorsHeaders, getMessageClassification, getPublicErrorMessage, isAllowedOrigin, isRecordPayload, normalizeOrigin } from '../api/_security.ts';
 import { isDashboardCollection, isSafeDocId, validateRecordShape, prepareCreateRecord, prepareSoftDelete, prepareUpdateRecord, validateRecordPayload } from '../api/_validation.ts';
 import { authorizeAdminToken } from '../api/_admin-auth.ts';
 
@@ -144,4 +144,13 @@ test('verifies revocation, current account state, and exact admin allowlist memb
   await assert.rejects(() => authorizeAdminToken(T, { ...verifier, async verifyIdToken() { throw new Error('auth/id-token-expired internal detail'); } }, 'admin@brandique.in'), (e: E) => e.statusCode === 401 && !/internal detail/.test(e.message));
   await assert.rejects(() => authorizeAdminToken(T, { ...verifier, async getUser() { return { email: 'admin@brandique.in', emailVerified: true, disabled: true }; } }, 'admin@brandique.in'), (e: E) => e.statusCode === 403);
   await assert.rejects(() => authorizeAdminToken(T, { ...verifier, async getUser() { return { email: 'admin@brandique.in', emailVerified: false }; } }, 'admin@brandique.in'), (e: E) => e.statusCode === 403 && /unverified/.test(e.message));
+});
+
+test('service filter lists every core service, including Voice Calling AI Agents, before any lead exists', () => {
+  assert.ok(CORE_SERVICES.includes('Voice Calling AI Agents'));
+  assert.deepEqual(mergeServiceCategories([]), [...CORE_SERVICES]);
+  const merged = mergeServiceCategories(['Voice Calling AI Agents', 'Free Growth Audit']);
+  assert.equal(merged.filter(item => item === 'Voice Calling AI Agents').length, 1);
+  assert.equal(merged[merged.length - 1], 'Free Growth Audit');
+  assert.equal(getMessageClassification({ source: 'service', service: 'Voice Calling AI Agents', serviceDetails: { 'Voice Goal': 'Instant Lead Calling' } }), 'service');
 });
