@@ -155,25 +155,27 @@ test('service filter lists every core service, including Voice Calling AI Agents
   assert.equal(getMessageClassification({ source: 'service', service: 'Voice Calling AI Agents', serviceDetails: { 'Voice Goal': 'Instant Lead Calling' } }), 'service');
 });
 
-test('voice plan catalog: ₹1,999 one-time setup + ₹5 / ₹8 / ₹11 per minute, no monthly/agent fee, seed matches', async () => {
-  const { VOICE_PLANS, voiceServiceRecord } = await import('../api/_catalog.ts');
-  assert.deepEqual(VOICE_PLANS.map(plan => [plan.name, plan.ratePerMinuteInr]), [['Voice Starter', 5], ['Voice Growth', 8], ['Voice Premium', 11]]);
+test('voice plan catalog: monthly Starter ₹2,799 / Pro ₹6,999 / Growth ₹22,999 + pay as you go ₹8.90/min, ₹1,999 setup, seed matches', async () => {
+  const { VOICE_PLANS, VOICE_PAYG, paygQuote, voiceServiceRecord } = await import('../api/_catalog.ts');
+  assert.deepEqual(VOICE_PLANS.map(plan => [plan.name, plan.priceInr, plan.includedMinutes, plan.effectiveRatePerMinuteInr, plan.teamMembers, plan.knowledgeBaseMb]),
+    [['Starter', 2799, 317, 8.83, 2, 10], ['Pro', 6999, 1000, 7, 5, 50], ['Growth', 22999, 3571, 6.44, 10, 100]]);
+  for (const plan of VOICE_PLANS) assert.equal((plan.priceInr / plan.includedMinutes).toFixed(2), plan.effectiveRatePerMinuteInr.toFixed(2), plan.name);
+  assert.deepEqual(VOICE_PLANS.map(plan => plan.workflowRunsPerMonth), [0, 10000, 100000]);
+  assert.equal(VOICE_PAYG.minTopUpInr, Math.round(VOICE_PAYG.minMinutes * VOICE_PAYG.ratePerMinuteInr));
+  assert.deepEqual([320, 500, 800].map(n => paygQuote(n).amountInr), [2848, 4450, 7120]);
+  assert.deepEqual(paygQuote(827), { minutes: 827, rate: 8.47, amountInr: 7005, bonusMinutes: 16, totalMinutes: 843, discounted: true });
   const { readFile } = await import('node:fs/promises');
   const seed = JSON.parse(await readFile(new URL('../seed/voice-ai-agents-plans.json', import.meta.url), 'utf8'));
   assert.equal(seed.format, 'brandique-firestore-export');
   const doc = seed.collections.settings.documents[0];
   assert.equal(doc.id, 'service-voice-ai-agents');
   assert.deepEqual(doc.data, voiceServiceRecord(doc.data.updatedAt));
-  assert.equal(doc.data.monthlyFeeInr, 0);
+  assert.equal(doc.data.pricingModel, 'monthly-subscription-or-pay-as-you-go');
+  assert.equal(doc.data.gstPercent, 18);
   assert.equal(doc.data.setupFeeInr, 1999);
   assert.equal(doc.data.setupFeeType, 'one-time');
-  assert.equal('agentFee' in doc.data, false);
-  assert.doesNotMatch(JSON.stringify(seed), /2099|2,099|periodDays|renewal/);
-  assert.deepEqual(doc.data.plans.map((plan: { features: string[] }) => plan.features), [
-    ['Native Multilingual', 'Value Voices', 'Low Latency', 'Budget bulk calling'],
-    ['Native Multilingual', 'Standard Voices', 'Low Latency', 'The All-Rounder'],
-    ['Native Multilingual', 'Premium Voices', 'Ultra-low Latency', 'Custom integrations'],
-  ]);
-  assert.deepEqual(doc.data.plans.filter((plan: { mostPopular: boolean }) => plan.mostPopular).map((plan: { name: string }) => plan.name), ['Voice Growth']);
+  assert.equal('monthlyFeeInr' in doc.data, false);
+  assert.doesNotMatch(JSON.stringify(seed), /ratePerMinuteInr":(5|8|11)[,}]|Premium|2099|2,099|periodDays|renewal/);
+  assert.deepEqual(doc.data.plans.filter((plan: { mostPopular: boolean }) => plan.mostPopular).map((plan: { name: string }) => plan.name), ['Pro']);
   assert.equal(validateRecordPayload('settings', doc.data, 'create'), null);
 });
